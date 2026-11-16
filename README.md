@@ -219,7 +219,7 @@ The generated service uses `/usr/bin/java`, restarts on failure and runs as a de
 | --- | --- |
 | Target | Ubuntu 24.04; Java 17 or 21 selected by the operator |
 | Application | One executable JAR plus reviewed, explicitly referenced configuration, agents and libraries |
-| Compose | Static YAML inspection; no interpolation, include resolution, multi-file merge or image-default resolution |
+| Compose | Single-service image/Compose execution merge during extraction; no interpolation, include resolution or multi-file merge |
 | Dockerfile | Simple package-install statements; candidates remain `review-required` |
 | Package requirements | Build-stage and runtime-stage candidates retain their stage; actual necessity and destination package mappings require review |
 | Image access | Built-in public registry/OCI-layout inspection and bounded JAR extraction; inherited package inventory is not implemented |

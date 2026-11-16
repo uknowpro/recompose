@@ -1,10 +1,10 @@
 # Built-in image inspection and extraction
 
-Available in 0.3.0. **No Docker daemon, Skopeo, umoci or Syft installation is required.** Image access and bounded layer processing are implemented inside recompose with Python's standard library. These external projects remain research references, not runtime prerequisites.
+Introduced in 0.3.0 and extended in 0.4.0. **No Docker daemon, Skopeo, umoci or Syft installation is required.** Image access and bounded layer processing are implemented inside recompose with Python's standard library. These external projects remain research references, not runtime prerequisites.
 
 ## Native binary (recommended)
 
-Version 0.3.1 provides `./recompose`, with Python embedded and no separate runtime installation. See [native binary usage](native-binary.md).
+Version 0.4.0 provides Windows and Linux binaries, with Python embedded and no separate runtime installation. See [native binary usage](native-binary.md).
 
 ## Alternative Python archive
 
@@ -59,15 +59,16 @@ No network requests occur in local-layout mode. The layout is an input format, n
 ```text
 extracted/app/
 ├── app.jar
+├── files/                 # reviewed supplemental file candidates
 ├── image-report.json
 └── migration-plan.yaml
 ```
 
-The report records index/manifest/config digests, platform, registry identity for remote inputs, JAR source path and SHA-256, and executable-JAR candidate paths. It includes environment variable names but excludes their values and raw command arguments.
+The report records index/manifest/config digests, platform, registry identity for remote inputs, JAR source path and SHA-256, and executable-JAR candidate paths. It includes environment variable names but excludes their values and unsupported argument values; recognized execution options are included.
 
-Selection order: explicit `--jar`, a direct `java ... -jar PATH` image command, or a single executable-JAR candidate. If the command names a missing/non-executable JAR, extraction fails instead of silently choosing another. Multiple candidates without a direct selection require `--jar`. Symlink/hardlink JARs are not followed.
+Selection order: explicit `--jar`, a direct `java ... -jar PATH` effective image/Compose command, or a single executable-JAR candidate. If the command names a missing/non-executable JAR, extraction fails instead of silently choosing another. Multiple candidates without a direct selection require `--jar`. Symlink/hardlink JARs are not followed.
 
-The generated plan remains `reviewed: false`. `JAVA_VERSION` from image environment provides a hint only; otherwise Java is `null`. Review JVM/application arguments, required environment variables, external files, native libraries and connection settings before approval. `required_environment` starts empty: image environment names are an inventory, not proof that every value should be copied to the VM. Compose overrides are not merged into image mode yet.
+The generated plan remains `reviewed: false`. `JAVA_VERSION` from image environment provides a hint only; otherwise Java is `null`. Review JVM/application arguments, required environment variables, external files, native libraries and connection settings before approval. `required_environment` lists application environment names (excluding standard image runtime keys unless explicitly overridden by Compose). Values must be supplied separately. Use `extract --compose compose.yaml --service app` to merge execution settings. Review each supplemental file and resolve each finding before generation; see [runtime mapping](runtime-mapping.md).
 
 ```sh
 # Edit extracted/app/migration-plan.yaml before generation.
@@ -80,9 +81,9 @@ recompose generate --plan extracted/app/migration-plan.yaml --output dist/app
 - Platform selection is exact for OS/architecture; ambiguous indexes fail.
 - SHA-256 descriptor size/digest verification for selected manifests, config and compressed blobs.
 - Uncompressed tar and gzip layers; OCI whiteouts, opaque directories and upper-layer replacement.
-- JAR files are copied to generated temporary filenames. Archive paths, symlinks, hardlinks and device entries are never materialized on the host.
+- JAR and requested supplemental files are copied to generated temporary filenames. Archive paths, symlinks, hardlinks and device entries are never materialized on the host.
 - Metadata: 8 MiB; each blob: 1 GiB; total fetched config/layers: 2 GiB; expanded layer reads: 4 GiB; entry payload: 512 MiB.
-- At most 256 layers, 200,000 archive entries and 256 encountered JAR files. Oversized or unsupported inputs fail without publishing an extraction directory.
+- At most 256 layers, 200,000 archive entries and 256 retained file candidates across layers. Oversized or unsupported inputs fail without publishing an extraction directory.
 - Existing output directories are not overwritten. Temporary workspaces are cleaned on success/failure.
 
 This is a bounded artifact reader, not a general-purpose OCI runtime or complete filesystem exporter. It does not inventory OS packages, execute Java to verify its version, rewrite entrypoint scripts, validate application bytecode, move databases or prove VM compatibility.

@@ -1,6 +1,6 @@
 # Native executable distributions
 
-Version 0.3.2 provides five platform builds. No Python, pip, Docker, Skopeo or umoci installation is needed to run recompose. The archives contain a single executable, license notices and build metadata.
+Version 0.4.0 provides five platform builds. No Python, pip, Docker, Skopeo or umoci installation is needed to run recompose. The archives contain a single executable, license notices and build metadata.
 
 | Machine | Archive | Raw executable | Test environment |
 | --- | --- | --- | --- |
