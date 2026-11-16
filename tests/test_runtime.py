@@ -72,7 +72,7 @@ class SupplementalTests(unittest.TestCase):
         unit = (self.root / 'deployment/service.service').read_text()
         self.assertIn('-javaagent:/opt/demo/rootfs/app/agent.jar', unit)
         self.assertIn('file:/opt/demo/rootfs/app/config/application.yml', unit)
-        self.assertIn('WorkingDirectory="/opt/demo/rootfs/app"', unit)
+        self.assertIn('WorkingDirectory=/opt/demo/rootfs/app', unit)
         self.assertEqual(len(list((self.root / 'deployment/artifacts/support').iterdir())), 4)
 
     def test_changed_file_digest_rejected(self):
