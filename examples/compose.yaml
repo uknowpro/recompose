@@ -1,0 +1,8 @@
+services:
+  demo:
+    image: example/demo:1.0
+    command: [java, -jar, /app/app.jar]
+    environment:
+      SPRING_PROFILES_ACTIVE: production
+    ports:
+      - '8080:8080'
