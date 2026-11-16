@@ -1,5 +1,6 @@
 # Build-time only. End users run the resulting executable without Docker/Python.
 FROM python:3.12-slim-bookworm@sha256:935c3c5b12357a7e10caa9c1e6ca5692344d97cf229832ef584be2cec9fc03df AS builder
+ARG TARGETARCH
 RUN apt-get update && apt-get install -y --no-install-recommends binutils && rm -rf /var/lib/apt/lists/*
 WORKDIR /src
 COPY pyproject.toml LICENSE ./
@@ -15,8 +16,8 @@ RUN python -m PyInstaller --onefile --clean --noupx --name recompose \
 RUN /out/recompose --version
 RUN cp -r /licenses /out/LICENSES && \
     python -m pip freeze > /out/BUILD-DEPENDENCIES.txt && \
-    printf 'Linux x86_64; built on Debian 12, glibc 2.36; Python runtime embedded.\n' > /out/BUILD-INFO.txt && \
-    cd /out && tar -czf recompose-linux-amd64.tar.gz recompose LICENSES BUILD-DEPENDENCIES.txt BUILD-INFO.txt && \
-    sha256sum recompose recompose-linux-amd64.tar.gz > SHA256SUMS
+    printf 'Linux %s; built on Debian 12, glibc 2.36; Python runtime embedded.\n' "$TARGETARCH" > /out/BUILD-INFO.txt && \
+    cd /out && tar -czf recompose-linux-${TARGETARCH}.tar.gz recompose LICENSES BUILD-DEPENDENCIES.txt BUILD-INFO.txt && \
+    sha256sum recompose recompose-linux-${TARGETARCH}.tar.gz > SHA256SUMS-linux-${TARGETARCH}.txt
 FROM scratch AS export
 COPY --from=builder /out/ /

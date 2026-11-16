@@ -7,5 +7,10 @@ if [ -e "$OUTPUT" ]; then
     echo 'Output exists; choose a new directory.' >&2
     exit 1
 fi
-docker buildx build --platform linux/amd64 --file "$ROOT/tools/Dockerfile.native" \
+ARCH=${2:-amd64}
+case "$ARCH" in
+    amd64|arm64) ;;
+    *) echo 'Supported Linux architectures: amd64, arm64' >&2; exit 1 ;;
+esac
+docker buildx build --platform "linux/$ARCH" --file "$ROOT/tools/Dockerfile.native" \
     --output "type=local,dest=$OUTPUT" "$ROOT"

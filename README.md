@@ -52,20 +52,23 @@ tar -xzf recompose-linux-amd64.tar.gz
 ./recompose inspect --image eclipse-temurin:21-jre --format json
 ```
 
-Windows x64 (PowerShell):
+Windows x64 example (PowerShell; choose x86 or arm64 for those machines):
 
 ```powershell
-Expand-Archive .\recompose-windows-amd64.zip -DestinationPath .\recompose
+Expand-Archive .\recompose-windows-x64.zip -DestinationPath .\recompose
 .\recompose\recompose.exe --version
 .\recompose\recompose.exe inspect --image eclipse-temurin:21-jre --format json
 ```
 
 | Platform | Download |
 | --- | --- |
-| Windows x64 | `recompose-windows-amd64.zip` or `recompose.exe` |
-| Linux x86_64 | `recompose-linux-amd64.tar.gz` or `recompose` |
+| Windows 32-bit (x86) | `recompose-windows-x86.zip` |
+| Windows Intel/AMD 64-bit (x64) | `recompose-windows-x64.zip` |
+| Windows ARM64 | `recompose-windows-arm64.zip` |
+| Linux Intel/AMD 64-bit | `recompose-linux-amd64.tar.gz` |
+| Linux ARM64 | `recompose-linux-arm64.tar.gz` |
 
-Python and dependencies are embedded. No Docker, Skopeo or umoci installation is required. Windows binaries are built and smoke-tested on Windows Server 2022 runners. Linux was tested on Debian 12 and Ubuntu 24.04; glibc 2.36+ is the build baseline. Windows binaries are unsigned. Both platforms generate deployment files for Linux VMs. See [native binary usage and builds](docs/native-binary.md). Add the executable to PATH to use the `recompose` commands below without `./`.
+Python and dependencies are embedded. No Docker, Skopeo or umoci installation is required. Windows x86/x64 binaries are tested on Windows Server 2022 (x86 through WOW64); Windows ARM64 is tested on Windows 11 ARM64. Linux ARM64 is tested on Ubuntu 24.04 ARM64. Linux was tested on Debian 12 and Ubuntu 24.04; glibc 2.36+ is the build baseline. Windows binaries are unsigned. Both platforms generate deployment files for Linux VMs. See [native binary usage and builds](docs/native-binary.md). Add the executable to PATH to use the `recompose` commands below without `./`.
 
 ### Alternative: install from source
 
@@ -244,7 +247,7 @@ The implementation lives in `recompose/cli.py`, `recompose/java_images.py` and `
 - [x] Reviewable Java migration plan
 - [x] Executable JAR, systemd and Ansible bundle generation
 - [x] Built-in image digest/config inspection and bounded executable-JAR extraction
-- [x] Native Windows x64 and Linux x86_64 binaries with embedded Python runtime
+- [x] Native Windows x86/x64/ARM64 and Linux amd64/ARM64 binaries with embedded Python runtime
 - [x] Alternative single-file Python archive with bundled dependencies
 - [ ] Private registry authentication and broader image format coverage
 - [ ] Java runtime, JVM option and external dependency discovery

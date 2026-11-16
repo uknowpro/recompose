@@ -1,80 +1,71 @@
-# Native Windows and Linux executables
+# Native executable distributions
 
-Version 0.3.2 provides self-contained Windows x64 and Linux x86_64 executables. **Users do not install Python, pip, Docker, Skopeo or umoci.** The Python interpreter and application dependencies are embedded in the executable.
+Version 0.3.2 provides five platform builds. No Python, pip, Docker, Skopeo or umoci installation is needed to run recompose. The archives contain a single executable, license notices and build metadata.
 
-## Run
+| Machine | Archive | Raw executable | Test environment |
+| --- | --- | --- | --- |
+| Windows 32-bit Intel/AMD | recompose-windows-x86.zip | recompose-windows-x86.exe | Windows Server 2022 via WOW64 |
+| Windows 64-bit Intel/AMD | recompose-windows-x64.zip | recompose-windows-x64.exe | Windows Server 2022 x64 |
+| Windows ARM64 | recompose-windows-arm64.zip | recompose-windows-arm64.exe | Windows 11 ARM64 |
+| Linux Intel/AMD 64-bit | recompose-linux-amd64.tar.gz | recompose-linux-amd64 | Ubuntu 24.04 x64 |
+| Linux ARM64 | recompose-linux-arm64.tar.gz | recompose-linux-arm64 | Ubuntu 24.04 ARM64 |
 
-Download `recompose-linux-amd64.tar.gz` and `SHA256SUMS` from the matching [release](https://github.com/uknowpro/recompose/releases). Verify the archive against its checksum, then:
-
-```sh
-tar -xzf recompose-linux-amd64.tar.gz
-./recompose --version
-./recompose inspect --image eclipse-temurin:21-jre --format json
-```
-
-The archive contains the executable, license notices and build metadata. If using the raw `recompose` asset instead, preserve its executable bit or run `chmod +x recompose`.
-
-```sh
-./recompose extract --image YOUR_PUBLIC_APP_IMAGE --output extracted/app
-```
-
-Replace the placeholder with a public application image. Existing image-mode limitations, including private-registry authentication, still apply. See [image extraction](image-extraction.md).
+Download from [Releases](https://github.com/uknowpro/recompose/releases). Each platform has a separately named SHA256SUMS file. `amd64` means Intel/AMD x86_64, not ARM64. ARM builds here mean 64-bit ARM; ARMv7/32-bit ARM and macOS are not included.
 
 ## Windows
 
-Download `recompose-windows-amd64.zip` and `SHA256SUMS-windows.txt` from the matching release. Verify the archive hash with `Get-FileHash`, then:
+Choose the ZIP matching the processor/OS architecture. In Windows Settings, check System → About → System type. Most Intel/AMD PCs use x64; ARM-based Windows machines use ARM64; a 32-bit Windows installation needs x86.
+
+PowerShell example for x64:
 
 ```powershell
-Expand-Archive .\recompose-windows-amd64.zip -DestinationPath .\recompose
+Get-FileHash .\recompose-windows-x64.zip -Algorithm SHA256
+Expand-Archive .\recompose-windows-x64.zip -DestinationPath .\recompose
 .\recompose\recompose.exe --version
 .\recompose\recompose.exe inspect --image eclipse-temurin:21-jre --format json
 ```
 
-The `.exe` runs without Python, pip or Docker. It is unsigned; published checksums provide an integrity check, not publisher authentication. Windows Server 2022 x64 is the automated build/test environment; Windows 10/11 x64 are intended usage environments but are not separately tested here. Windows ARM64 and 32-bit builds are not provided.
+The executable inside each ZIP is named `recompose.exe`; standalone download names include architecture to prevent confusion. Windows binaries are unsigned. Checksums verify file integrity, not publisher identity. Windows 10/11 Intel/AMD are intended desktop environments; automated x86 validation runs under WOW64 on a 64-bit server, not on a separate 32-bit OS installation. Windows ARM64 validation runs natively on Windows 11 ARM64.
 
-Windows native TLS uses the Windows certificate stores through the embedded Python runtime. Windows host paths may contain spaces/non-ASCII text; image paths always use POSIX `/` separators. The executable generates **Linux VM** deployment files, not Windows services. Execute generated Ansible playbooks from a supported Linux control machine or WSL.
+Windows TLS uses the Windows certificate stores through the embedded runtime. Image paths always use POSIX separators even when host file paths use Windows syntax. Both Windows and Linux builds produce **Linux VM** deployment configurations; no Windows-service migration is implemented. Run Ansible deployment from a Linux control machine or WSL.
 
-## Compatibility
-
-- Linux x86_64, built on Debian 12 with glibc 2.36; tested on Debian 12 and Ubuntu 24.04.
-- This is not a fully static executable: a compatible Linux kernel, loader and system C library are required. Older glibc systems and Alpine/musl are not covered.
-- No administrator privileges are needed to inspect or extract images. The binary needs a writable temporary directory that permits loading executable code. Set `TMPDIR` if the system's `/tmp` is mounted `noexec`.
-- Normal system CA certificates and explicit `SSL_CERT_FILE` / `SSL_CERT_DIR` settings are respected. On a minimal system without a CA file, the embedded Debian build-time public roots are used; update binaries to refresh that fallback trust store.
-- macOS and ARM64 native binaries require separate platform builds and are not published by this workflow.
-- Ansible is still required on the control machine when an operator runs the generated deployment playbook. Java is installed on the target VM by that playbook. Neither is required to run recompose itself.
-
-## Maintainer build
-
-Docker with Buildx is a build-time requirement only:
+## Linux
 
 ```sh
-sh tools/build_native.sh
+tar -xzf recompose-linux-amd64.tar.gz
+./recompose --version
 ```
 
-Outputs in `dist/native/`: `recompose`, `recompose-linux-amd64.tar.gz`, `SHA256SUMS`, `LICENSES/`, `BUILD-INFO.txt` and `BUILD-DEPENDENCIES.txt`. The builder refuses an existing destination. PyInstaller and PyYAML versions are pinned; the resolved transitive build packages are recorded. Distribution packages are fetched at build time, so this is not a byte-for-byte reproducible build claim.
+Use the arm64 archive on 64-bit ARM Linux. Raw binaries require an executable permission (`chmod +x recompose-linux-arm64`, for example). Both builds use Debian 12/glibc 2.36 as their baseline; compatible kernel/loader/libc are required. Older glibc and Alpine/musl are outside the verified scope. The prior x64 build also passed a Debian 12 startup check.
 
-The build runs the unit suite before packaging. The executable embeds license texts; the archive also includes them as readable files. No native output is committed to Git.
+The embedded runtime needs a writable temporary directory that permits executable mappings; set TMPDIR when /tmp is noexec. Normal OS trust and explicit SSL_CERT_FILE/SSL_CERT_DIR settings are respected. The Linux bundle includes build-time public roots as fallback on minimal systems without a CA file.
 
-## Windows maintainer build and automation
+## Maintainer builds
 
-On Windows x64 with x64 Python 3.12:
+Windows builds must use a matching Windows Python interpreter. The builder verifies the produced PE machine field, rather than trusting the filename.
 
 ```powershell
 python -m pip install PyYAML==6.0.3 pyinstaller==6.22.3
-python -m unittest discover -s tests -v
-python tools/build_windows.py
-python tools/smoke_native.py --binary dist/windows/recompose.exe
+python tools/build_windows.py --arch x64
+python tools/smoke_native.py --binary dist/windows/recompose-windows-x64.exe
 ```
 
-The `Native builds` GitHub Actions workflow is manually dispatched. Windows and Linux jobs run unit tests, build executables and smoke-test the resulting binaries with PATH empty. The smoke test covers local OCI inspection, JAR extraction and deployment generation, including a non-ASCII output directory. The Windows job also checks public registry HTTPS access. Only successful jobs upload distribution artifacts; publication is a separate reviewed step.
+Use `--arch x86` with 32-bit Python, or `--arch arm64` with native ARM64 Python. CI uses Python 3.12 for x86/x64 and 3.13 for Windows ARM64.
 
-## Verification
+Linux builds use Docker/Buildx only at build time:
 
-- 48 tests passed under the embedded runtime's Python 3.12 build environment.
-- On a clean Ubuntu 24.04 container without Python or image tools, a non-root user executed the binary and extracted a synthetic OCI JAR with networking disabled.
-- The same minimal Ubuntu environment successfully inspected a public Java image over HTTPS without installing extra packages.
-- Debian 12 startup was checked separately.
+```sh
+sh tools/build_native.sh dist/native amd64
+# On an ARM64 builder:
+sh tools/build_native.sh dist/native-arm64 arm64
+```
 
-Containers are used only as clean test/build environments here. This validates CLI distribution, not a real VM application migration or production application startup.
+The Native builds workflow uses five independent jobs with native ARM runners. It runs the unit suite, builds executables, tests the frozen CLI with PATH empty through inspect → extract → generate (including non-ASCII paths), and checks Windows public-registry HTTPS access. It uploads only successful artifacts. Release publication is separate from the build workflow.
 
-Packaging reference: [PyInstaller one-file mode](https://pyinstaller.org/en/stable/usage.html).
+Build dependencies and notices are included; exact distribution packages are resolved at build time, so byte-for-byte reproducibility is not claimed. Native outputs stay outside Git.
+
+## Scope
+
+These checks validate CLI portability and artifact handling, not production Java startup or complete VM migration. Public anonymous registry access and local OCI layouts are supported. Private registry authentication remains unsupported. Ansible and target Java requirements apply to later deployment, not to running recompose.
+
+The image platform selected by `--platform` is independent of the CLI host CPU. An ARM64 CLI can inspect an amd64 image without executing it; this does not prove that the application's native libraries are portable across architectures.

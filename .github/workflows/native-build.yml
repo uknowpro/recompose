@@ -5,39 +5,62 @@ permissions:
   contents: read
 jobs:
   windows:
-    runs-on: windows-2022
-    timeout-minutes: 20
+    name: windows-${{ matrix.arch }}
+    runs-on: ${{ matrix.runner }}
+    timeout-minutes: 25
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - arch: x86
+            runner: windows-2022
+            python: '3.12'
+          - arch: x64
+            runner: windows-2022
+            python: '3.12'
+          - arch: arm64
+            runner: windows-11-arm
+            python: '3.13'
     env:
       PYTHONUTF8: '1'
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-python@v5
         with:
-          python-version: '3.12'
-          architecture: x64
+          python-version: ${{ matrix.python }}
+          architecture: ${{ matrix.arch }}
       - name: Install build dependencies
         run: python -m pip install PyYAML==6.0.3 pyinstaller==6.22.3
       - name: Unit tests
         run: python -m unittest discover -s tests -v
-      - name: Build Windows executable
-        run: python tools/build_windows.py
+      - name: Build Windows executable and verify PE architecture
+        run: python tools/build_windows.py --arch ${{ matrix.arch }}
       - name: Native offline smoke test
-        run: python tools/smoke_native.py --binary dist/windows/recompose.exe
+        run: python tools/smoke_native.py --binary dist/windows/recompose-windows-${{ matrix.arch }}.exe
       - name: Public HTTPS image inspection
         run: |
-          .\dist\windows\recompose.exe inspect --image eclipse-temurin:21-jre --format json
+          & ".\dist\windows\recompose-windows-${{ matrix.arch }}.exe" inspect --image eclipse-temurin:21-jre --format json
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
       - uses: actions/upload-artifact@v4
         with:
-          name: recompose-windows-amd64
+          name: recompose-windows-${{ matrix.arch }}
           path: |
-            dist/windows/recompose.exe
-            dist/windows/recompose-windows-amd64.zip
-            dist/windows/SHA256SUMS-windows.txt
+            dist/windows/recompose-windows-${{ matrix.arch }}.exe
+            dist/windows/recompose-windows-${{ matrix.arch }}.zip
+            dist/windows/SHA256SUMS-windows-${{ matrix.arch }}.txt
           if-no-files-found: error
   linux:
-    runs-on: ubuntu-24.04
-    timeout-minutes: 20
+    name: linux-${{ matrix.arch }}
+    runs-on: ${{ matrix.runner }}
+    timeout-minutes: 25
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - arch: amd64
+            runner: ubuntu-24.04
+          - arch: arm64
+            runner: ubuntu-24.04-arm
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-python@v5
@@ -45,14 +68,18 @@ jobs:
           python-version: '3.12'
       - run: python -m pip install PyYAML==6.0.3
       - name: Build Linux executable and test
-        run: sh tools/build_native.sh
+        run: sh tools/build_native.sh dist/native ${{ matrix.arch }}
       - name: Native offline smoke test
         run: python tools/smoke_native.py --binary dist/native/recompose
+      - name: Name raw executable for release
+        run: mv dist/native/recompose dist/native/recompose-linux-${{ matrix.arch }}
+      - name: Update raw executable checksum name
+        run: sed -i 's/  recompose$/  recompose-linux-${{ matrix.arch }}/' dist/native/SHA256SUMS-linux-${{ matrix.arch }}.txt
       - uses: actions/upload-artifact@v4
         with:
-          name: recompose-linux-amd64
+          name: recompose-linux-${{ matrix.arch }}
           path: |
-            dist/native/recompose
-            dist/native/recompose-linux-amd64.tar.gz
-            dist/native/SHA256SUMS
+            dist/native/recompose-linux-${{ matrix.arch }}
+            dist/native/recompose-linux-${{ matrix.arch }}.tar.gz
+            dist/native/SHA256SUMS-linux-${{ matrix.arch }}.txt
           if-no-files-found: error
