@@ -18,6 +18,8 @@ from pathlib import Path, PurePosixPath
 
 import yaml
 
+from recompose.runtime import analyze_execution, compose_service, requested_file, masked_file, sensitive_file, vm_path
+
 META_LIMIT = 8 * 1024 * 1024
 BLOB_LIMIT = 1024 * 1024 * 1024
 TOTAL_LIMIT = 2 * BLOB_LIMIT
@@ -272,7 +274,7 @@ class LimitedReader:
         return data
 
 
-def scan_layers(source, manifest, workspace):
+def scan_layers(source, manifest, workspace, references=()):
     files, budget, entries, serial = {}, [0], 0, 0
     for number, layer in enumerate(manifest['layers']):
         archive = workspace / f'layer-{number}'
@@ -303,10 +305,10 @@ def scan_layers(source, manifest, workspace):
                         entry['kind'] = 'directory'
                     elif member.isfile():
                         entry['kind'] = 'file'
-                        if path.lower().endswith('.jar'):
+                        if path.lower().endswith('.jar') or requested_file(path, references):
                             serial += 1
                             if serial > 256:
-                                raise ImageError('JAR candidate limit exceeded')
+                                raise ImageError('Retained file candidate limit exceeded')
                             payload = workspace / f'jar-{serial}'
                             with tar.extractfile(member) as data, payload.open('wb') as output:
                                 shutil.copyfileobj(data, output, 1024 * 1024)
@@ -380,7 +382,10 @@ def executable_jar(path):
         return False
 
 
-def _image_operation(image=None, layout=None, platform='linux/amd64', output=None, jar=None, service='app'):
+def _image_operation(image=None, layout=None, platform='linux/amd64', output=None, jar=None, service='app', compose=None, include_files=None):
+    spec = compose_service(compose, service)
+    if not image and not layout:
+        image = spec.get('image')
     if bool(image) == bool(layout):
         raise ImageError('Choose exactly one image reference or OCI layout')
     if not re.fullmatch(r'[a-z][a-z0-9-]{0,30}', service):
@@ -396,36 +401,67 @@ def _image_operation(image=None, layout=None, platform='linux/amd64', output=Non
         if image:
             provenance.update(registry=source.host, repository=source.repo, requested_reference=source.ref)
         runtime = runtime_summary(config)
+        execution = analyze_execution(config, spec, service, include_files)
+        runtime['execution'] = execution
         report = {'schema_version': 1, 'source': provenance, 'runtime': runtime,
                   'layer_count': len(manifest['layers']),
-                  'limitations': ['Image commands and environment values are not copied to reports or plans.',
+                  'limitations': ['Only recognized arguments are copied; environment values are never copied.',
                                   'Java version is an environment hint, not executable or bytecode verification.',
-                                  'No Compose overrides, OS package inventory, external configuration or native libraries are migrated.']}
+                                  'Host mounts, secrets, OS packages and shell scripts require manual migration; file secret screening is heuristic.']}
         if not destination:
             return report
-        candidates = scan_layers(source, manifest, workspace)
-        runnable = {name: path for name, path in candidates.items() if executable_jar(path)}
-        selected = container_path(jar) if jar else container_path(runtime['command_jar']) if runtime['command_jar'] else None
+        candidates = scan_layers(source, manifest, workspace, execution['references'])
+        runnable = {name: path for name, path in candidates.items() if name.lower().endswith('.jar') and executable_jar(path) and not masked_file(name, execution)}
+        selected = container_path(jar) if jar else container_path(execution['command_jar']) if execution['command_jar'] else None
         if selected is None and len(runnable) == 1:
             selected = next(iter(runnable))
         if selected not in runnable:
             raise ImageError('No unambiguous executable JAR; use --jar with a regular executable JAR path. Candidates: ' + ', '.join('/' + x for x in sorted(runnable)))
+        if jar and execution['command_jar'] and '/' + selected != execution['command_jar']:
+            execution['review_items'].append({'code': 'JAR_OVERRIDE', 'detail': 'Selected JAR differs from the effective command; review arguments and dependencies.', 'resolved': False})
         content = runnable[selected]
+        with zipfile.ZipFile(content) as archive:
+            manifest_text = archive.read('META-INF/MANIFEST.MF')
+        if re.search(rb'^Class-Path:', manifest_text, re.M):
+            execution['review_items'].append({'code': 'MANIFEST_CLASSPATH', 'detail': 'Review manifest Class-Path and explicitly include its dependencies; entries are not resolved automatically.', 'resolved': False})
         checksum = hashlib.sha256()
         with content.open('rb') as stream:
             while chunk := stream.read(1024 * 1024):
                 checksum.update(chunk)
         report['artifact'] = {'source_path': '/' + selected, 'sha256': checksum.hexdigest(),
                               'executable_jar_candidates': ['/' + name for name in sorted(runnable)]}
+        supporting = []
+        for ref in execution['references']:
+            matches = [(name, path) for name, path in candidates.items()
+                       if requested_file(name, [ref]) and not masked_file(name, execution)]
+            if not matches:
+                execution['review_items'].append({'code': 'MISSING_FILE', 'detail': ref['path'], 'resolved': False})
+            for name, path in sorted(matches):
+                if name == selected or any(item['container_path'] == '/' + name for item, _ in supporting):
+                    continue
+                if sensitive_file(name, path):
+                    execution['review_items'].append({'code': 'SENSITIVE_FILE', 'detail': '/' + name + ': inject separately; file omitted', 'resolved': False})
+                    continue
+                item = {'source': f'files/{len(supporting):04d}.bin', 'container_path': '/' + name,
+                        'destination': vm_path(service, '/' + name), 'role': ref['role'], 'reviewed': False,
+                        'sha256': hashlib.sha256(path.read_bytes()).hexdigest()}
+                supporting.append((item, path))
         migration = {'schema_version': 1, 'service': service, 'target': 'ubuntu-24.04', 'reviewed': False,
                      'artifact': 'app.jar', 'java_version': runtime['java_major_hint'],
-                     'java_version_evidence': runtime['java_version_evidence'], 'jvm_options': [], 'app_args': [],
-                     'os_packages': [], 'required_environment': [], 'analysis': report}
+                     'java_version_evidence': runtime['java_version_evidence'], 'jvm_options': execution['jvm_options'], 'app_args': execution['app_args'],
+                     'artifact_destination': vm_path(service, '/' + selected),
+                     'working_directory': execution['target_working_directory'],
+                     'files': [item for item, _ in supporting], 'review_items': execution['review_items'],
+                     'os_packages': [], 'required_environment': execution['required_environment'], 'analysis': report}
         destination.parent.mkdir(parents=True, exist_ok=True)
         with tempfile.TemporaryDirectory(dir=destination.parent) as staging:
             bundle = Path(staging) / 'extracted'
             bundle.mkdir()
             shutil.copyfile(content, bundle / 'app.jar')
+            for item, path in supporting:
+                target = bundle / item['source']
+                target.parent.mkdir(exist_ok=True)
+                shutil.copyfile(path, target)
             (bundle / 'image-report.json').write_text(json.dumps(report, indent=2) + '\n')
             (bundle / 'migration-plan.yaml').write_text(yaml.safe_dump(migration, sort_keys=False))
             if destination.exists():
@@ -434,9 +470,9 @@ def _image_operation(image=None, layout=None, platform='linux/amd64', output=Non
         return {'output': str(destination), **report}
 
 
-def image_operation(image=None, layout=None, platform='linux/amd64', output=None, jar=None, service='app'):
+def image_operation(image=None, layout=None, platform='linux/amd64', output=None, jar=None, service='app', compose=None, include_files=None):
     try:
-        return _image_operation(image, layout, platform, output, jar, service)
+        return _image_operation(image, layout, platform, output, jar, service, compose, include_files)
     except ImageError:
         raise
     except (ValueError, TypeError, AttributeError, KeyError, zlib.error, OverflowError, http.client.HTTPException):

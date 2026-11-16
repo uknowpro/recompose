@@ -8,7 +8,7 @@ Inspect Docker Compose and Dockerfile inputs, review a migration plan, and gener
 
 [Quick start](#quick-start) · [Commands](#commands) · [Deployment bundle](#deployment-bundle) · [Scope](#scope-and-evidence) · [Roadmap](#roadmap)
 
-> Early development · package version 0.3.2. Compose analysis is local; explicit `--image` commands access the selected public registry. Executable JAR extraction is built in. Review the generated plan before deployment; end-to-end VM migration remains unverified.
+> Early development · package version 0.4.0. Compose analysis is local; image extraction (including images selected through Compose) accesses the selected public registry. Executable JAR extraction is built in. Review the generated plan before deployment; end-to-end VM migration remains unverified.
 
 ## Features
 
@@ -21,6 +21,21 @@ Inspect Docker Compose and Dockerfile inputs, review a migration plan, and gener
 | Native service generation | Generate a systemd unit and Ansible installation playbook for a single executable JAR. |
 | Traceable artifacts | Copy the supplied JAR and record its SHA-256 checksum in a manifest. |
 | Local generation | Generate deployment files without connecting to a cluster or modifying the destination VM. |
+
+### Compose execution settings and supplemental files
+
+```sh
+./recompose extract --compose compose.yaml --service app --output extracted
+# Use a local image instead of a registry pull:
+./recompose extract --oci-layout image-layout --compose compose.yaml --service app \
+  --include-file /app/config/ --output extracted-local
+```
+
+`extract --compose` uses the selected service's `image` unless `--image` or `--oci-layout` is provided. It merges `entrypoint`, `command` and `working_dir` with image metadata. Direct `java -jar` commands retain recognized JVM/application options and map referenced configuration, Java agents, loader JARs and native libraries beneath `/opt/<service>/rootfs`. `--include-file` is repeatable; a trailing `/` selects a directory. Files must be regular files in the final image filesystem; links and files hidden by Compose mounts are excluded.
+
+Review `jvm_options`, `app_args`, `working_directory`, `artifact_destination` and `required_environment`. Each supplemental `files` entry requires `reviewed: true`, and every `review_items` entry requires `resolved: true` **after the issue is addressed**. Then set the plan's top-level `reviewed: true` and run `generate`. Changed supplemental file content invalidates its SHA-256; review it and update the checksum before generating again.
+
+Shell wrappers, interpolation, unsupported arguments, agent option strings, manifest Class-Path dependencies and external Compose resources require manual resolution. Environment values are never copied. Obvious credential files and literal secrets in common configuration formats are omitted with a finding; screening is heuristic, so review every included file before sharing. Native libraries still require ABI, architecture and OS dependency checks. File collection is bounded to 256 retained candidates across layers. Full details: [runtime mapping](docs/runtime-mapping.md).
 
 ## Migration workflow
 
@@ -203,7 +218,7 @@ The generated service uses `/usr/bin/java`, restarts on failure and runs as a de
 | Area | Current boundary |
 | --- | --- |
 | Target | Ubuntu 24.04; Java 17 or 21 selected by the operator |
-| Application | One executable JAR per generated bundle; external files are not copied |
+| Application | One executable JAR plus reviewed, explicitly referenced configuration, agents and libraries |
 | Compose | Static YAML inspection; no interpolation, include resolution, multi-file merge or image-default resolution |
 | Dockerfile | Simple package-install statements; candidates remain `review-required` |
 | Package requirements | Build-stage and runtime-stage candidates retain their stage; actual necessity and destination package mappings require review |
@@ -250,7 +265,8 @@ The implementation lives in `recompose/cli.py`, `recompose/java_images.py` and `
 - [x] Native Windows x86/x64/ARM64 and Linux amd64/ARM64 binaries with embedded Python runtime
 - [x] Alternative single-file Python archive with bundled dependencies
 - [ ] Private registry authentication and broader image format coverage
-- [ ] Java runtime, JVM option and external dependency discovery
+- [x] Direct `java -jar` option discovery and referenced file extraction
+- [ ] Full Java runtime and transitive dependency verification
 - [x] Static Java image review and official OpenJDK image deprecation findings
 - [ ] Live distribution lifecycle and replacement-image compatibility assessment
 - [ ] OS dependency classification and target-package mapping

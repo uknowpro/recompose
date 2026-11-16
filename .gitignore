@@ -22,3 +22,8 @@ migration-plan.yaml
 .idea/
 .vscode/
 .DS_Store
+# Local extraction and deployment outputs (may contain application configuration)
+/extracted/
+/extracted-local/
+/deployment/
+image-report.json

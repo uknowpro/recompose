@@ -10,7 +10,7 @@ import tempfile
 import tarfile
 import urllib.error
 import zipfile
-from pathlib import Path
+from pathlib import Path, PurePosixPath
 
 import yaml
 
@@ -136,6 +136,39 @@ def generate(plan_path, destination):
             raise MigrationError('JAR manifest is missing or invalid') from exc
         if not re.search(r'^Main-Class:\s*\S+', manifest, re.M):
             raise MigrationError('JAR must declare Main-Class')
+    review_items = p.get('review_items', [])
+    if not isinstance(review_items, list) or any(not isinstance(i, dict) or i.get('resolved') is not True for i in review_items):
+        raise MigrationError('Resolve each review_items entry before generation')
+    def managed_path(value):
+        prefix = f'/opt/{name}/rootfs'
+        if (not isinstance(value, str) or not re.fullmatch(r'/[A-Za-z0-9_./+ -]+', value)
+                or '..' in value.split('/') or not (value == prefix or value.startswith(prefix + '/'))):
+            raise MigrationError('File destinations must be safe paths under the service rootfs')
+        return str(PurePosixPath(value))
+    artifact_dest = managed_path(p['artifact_destination']) if 'artifact_destination' in p else f'/opt/{name}/app.jar'
+    workdir = managed_path(p['working_directory']) if 'working_directory' in p else f'/var/lib/{name}'
+    supporting = p.get('files', [])
+    if not isinstance(supporting, list):
+        raise MigrationError('files must be a list')
+    base = Path(plan_path).resolve().parent
+    targets = {artifact_dest}
+    checked_files = []
+    for item in supporting:
+        if not isinstance(item, dict) or item.get('reviewed') is not True or not isinstance(item.get('source'), str):
+            raise MigrationError('Review every supplemental file before generation')
+        target = managed_path(item.get('destination'))
+        source = (base / item['source']).resolve()
+        if not source.is_relative_to(base) or not source.is_file():
+            raise MigrationError('Supplemental source must be a regular file inside the plan directory')
+        if target in targets or any(target.startswith(t + '/') or t.startswith(target + '/') for t in targets):
+            raise MigrationError('Conflicting file destinations')
+        targets.add(target)
+        checksum = hashlib.sha256(source.read_bytes()).hexdigest()
+        if checksum != item.get('sha256'):
+            raise MigrationError('Supplemental file digest mismatch; review the changed file')
+        checked_files.append((source, target, checksum))
+    if any(workdir == t or workdir.startswith(t + '/') for t in targets):
+        raise MigrationError('Working directory conflicts with a file destination')
     args = []
     for key in ('jvm_options', 'app_args', 'os_packages', 'required_environment'):
         values = p.get(key, [])
@@ -148,7 +181,7 @@ def generate(plan_path, destination):
         if not re.fullmatch(r'[A-Za-z_][A-Za-z0-9_]*', key):
             raise MigrationError('Invalid environment variable name')
     args = [unit_arg(v) for v in p.get('jvm_options', [])]
-    args += ['-jar', f'/opt/{name}/app.jar']
+    args += ['-jar', unit_arg(artifact_dest)]
     args += [unit_arg(v) for v in p.get('app_args', [])]
     unit = f'''[Unit]
 Description=Recompose Java service {name}
@@ -159,7 +192,7 @@ Wants=network-online.target
 Type=simple
 User={name}
 Group={name}
-WorkingDirectory=/var/lib/{name}
+WorkingDirectory={unit_arg(workdir)}
 EnvironmentFile=/etc/{name}/app.env
 ExecStart=/usr/bin/java {' '.join(args)}
 Restart=on-failure
@@ -183,7 +216,12 @@ WantedBy=multi-user.target
     ]
     for folder, owner in [(f'/opt/{name}', 'root'), (f'/etc/{name}', 'root'), (f'/var/lib/{name}', name)]:
         tasks.append({'name': f'Create {folder}', 'ansible.builtin.file': {'path': folder, 'state': 'directory', 'owner': owner, 'group': name, 'mode': '0750'}})
-    for src, dest, mode in [('artifacts/app.jar', f'/opt/{name}/app.jar', '0644'), ('service.service', f'/etc/systemd/system/{name}.service', '0644')]:
+    directories = {str(PurePosixPath(t).parent) for t in targets} | {workdir}
+    for folder in sorted(directories, key=lambda x: (len(x.split('/')), x)):
+        tasks.append({'name': 'Create application directory', 'ansible.builtin.file': {'path': folder, 'state': 'directory', 'owner': name if folder == workdir else 'root', 'group': name, 'mode': '0750'}})
+    for index, (_, target, _) in enumerate(checked_files):
+        tasks.append({'name': 'Install reviewed supplemental file', 'ansible.builtin.copy': {'src': f'artifacts/support/{index:04d}.bin', 'dest': target, 'owner': 'root', 'group': name, 'mode': '0640'}, 'diff': False, 'notify': 'Restart application'})
+    for src, dest, mode in [('artifacts/app.jar', artifact_dest, '0644'), ('service.service', f'/etc/systemd/system/{name}.service', '0644')]:
         tasks.append({'name': f'Install {src}', 'ansible.builtin.copy': {'src': src, 'dest': dest, 'owner': 'root', 'group': 'root', 'mode': mode}, 'notify': 'Restart application'})
     tasks += [
         {'name': 'Install environment', 'ansible.builtin.template': {'src': 'app.env.j2', 'dest': f'/etc/{name}/app.env', 'owner': 'root', 'group': 'root', 'mode': '0600'}, 'no_log': True, 'notify': 'Restart application'},
@@ -200,11 +238,14 @@ WantedBy=multi-user.target
         root = Path(temp) / 'bundle'
         (root / 'artifacts').mkdir(parents=True)
         shutil.copyfile(artifact, root / 'artifacts/app.jar')
+        for index, (source, _, _) in enumerate(checked_files):
+            (root / 'artifacts/support').mkdir(exist_ok=True)
+            shutil.copyfile(source, root / f'artifacts/support/{index:04d}.bin')
         (root / 'service.service').write_text(unit)
         (root / 'install.yml').write_text(yaml.safe_dump(play, sort_keys=False))
         (root / 'app.env.j2').write_text('{% for key, value in recompose_environment.items() %}\n{{ key }}={{ value | string | to_json }}\n{% endfor %}\n')
         (root / 'environment.example.yml').write_text(yaml.safe_dump({'recompose_environment': {k: 'REPLACE_ME' for k in p.get('required_environment', [])}}))
-        (root / 'manifest.json').write_text(json.dumps({'schema_version': 1, 'service': name, 'sha256': hashlib.sha256(artifact.read_bytes()).hexdigest()}, indent=2))
+        (root / 'manifest.json').write_text(json.dumps({'schema_version': 1, 'service': name, 'sha256': hashlib.sha256(artifact.read_bytes()).hexdigest(), 'files': [{'destination': t, 'sha256': h} for _, t, h in checked_files]}, indent=2))
         (root / 'RUNBOOK.md').write_text('Review generated files and supply environment values securely.\n\nRun: ansible-playbook -i HOST, install.yml -e @environment.yml\n\nVerify: systemctl status '+name+' and application-specific HTTP checks.\nNo automatic data migration, rollback or health guarantee is provided.\n')
         root.rename(dest)
     return {'output': str(dest), 'service': name}
@@ -212,7 +253,7 @@ WantedBy=multi-user.target
 
 def main(argv=None):
     parser = argparse.ArgumentParser(prog='recompose')
-    parser.add_argument('--version', action='version', version='recompose 0.3.2')
+    parser.add_argument('--version', action='version', version='recompose 0.4.0')
     sub = parser.add_subparsers(dest='command', required=True)
     for command in ('inspect', 'plan'):
         cmd = sub.add_parser(command)
@@ -231,7 +272,9 @@ def main(argv=None):
             cmd.add_argument('--service', required=True)
         cmd.add_argument('--output')
     cmd = sub.add_parser('extract')
-    inputs = cmd.add_mutually_exclusive_group(required=True)
+    cmd.add_argument('--compose')
+    cmd.add_argument('--include-file', action='append', default=[])
+    inputs = cmd.add_mutually_exclusive_group()
     inputs.add_argument('--image')
     inputs.add_argument('--oci-layout')
     cmd.add_argument('--platform', default='linux/amd64')
@@ -245,7 +288,7 @@ def main(argv=None):
     a = parser.parse_args(argv)
     try:
         if a.command == 'extract':
-            result = image_operation(a.image, a.oci_layout, a.platform, a.output, a.jar, a.service)
+            result = image_operation(a.image, a.oci_layout, a.platform, a.output, a.jar, a.service, a.compose, a.include_file)
         elif a.command == 'inspect' and not a.compose:
             if a.dockerfile or a.build_target:
                 raise MigrationError('--dockerfile and --build-target require --compose')

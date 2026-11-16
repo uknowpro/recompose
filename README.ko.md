@@ -8,7 +8,21 @@ Docker Compose와 Dockerfile을 분석하고, 이전 계획을 검토한 뒤, �
 
 [빠른 시작](#quick-start) · [명령어](#commands) · [배포 패키지](#deployment-bundle) · [지원 범위](#scope) · [로드맵](#roadmap)
 
-> 초기 개발 단계 · 패키지 버전 0.3.2. Compose 분석은 로컬에서 수행하며, 명시적인 `--image` 명령은 선택한 공개 레지스트리에 접속합니다. 실행형 JAR 추출 기능을 내장했습니다. 배포 전 계획 검토가 필요하며 실제 VM 이전의 전체 과정 검증은 아직 완료되지 않았습니다.
+> 초기 개발 단계 · 패키지 버전 0.4.0. Compose 분석은 로컬에서 수행하며, 이미지 추출(Compose에서 선택한 이미지 포함)은 선택한 공개 레지스트리에 접속합니다. 실행형 JAR 추출 기능을 내장했습니다. 배포 전 계획 검토가 필요하며 실제 VM 이전의 전체 과정 검증은 아직 완료되지 않았습니다.
+
+## Compose 실행 설정과 추가 파일 이전
+
+```sh
+./recompose extract --compose compose.yaml --service app --output extracted
+./recompose extract --oci-layout image-layout --compose compose.yaml --service app \
+  --include-file /app/config/ --output extracted-local
+```
+
+`--image` 또는 `--oci-layout`을 지정하지 않으면 선택한 서비스의 `image`를 사용합니다. 이미지와 Compose의 `entrypoint`, `command`, `working_dir`를 합치고, 직접 실행하는 `java -jar` 명령에서 지원하는 JVM·애플리케이션 인자를 수집합니다. 참조한 설정 파일, Java agent, loader JAR, 네이티브 라이브러리는 `/opt/<service>/rootfs` 아래로 경로를 바꿉니다. `--include-file`은 반복 지정할 수 있으며 끝에 `/`를 붙이면 디렉터리를 선택합니다. 최종 이미지의 일반 파일만 추출하며 링크와 Compose 볼륨에 가려진 파일은 제외합니다.
+
+계획의 실행 인자, 작업 디렉터리, 아티팩트 경로와 필수 환경변수를 확인하세요. `files`의 각 파일을 검토하여 `reviewed: true`로 설정하고, `review_items`는 **문제를 해결한 뒤** `resolved: true`로 바꿉니다. 마지막으로 계획 전체의 `reviewed: true`를 설정하고 `generate`를 실행합니다. 추가 파일이 변경되면 체크섬 검증이 실패하므로 내용을 다시 검토하고 SHA-256을 갱신해야 합니다.
+
+셸 스크립트, 변수 치환, 지원하지 않는 인자, agent 옵션 문자열, manifest Class-Path 의존성과 외부 Compose 자원은 직접 해결해야 합니다. 환경변수 값은 복사하지 않습니다. 명백한 자격증명 파일이나 일반 설정 형식에서 발견한 비밀값은 파일을 제외하고 검토 항목을 남깁니다. 탐지는 완전하지 않으므로 공유 전에 모든 파일을 확인하세요. 네이티브 라이브러리의 ABI·CPU 아키텍처·OS 의존성은 별도 검증 대상입니다. 레이어 전체에서 보관하는 파일 후보는 최대 256개입니다. [상세 동작과 제한](docs/runtime-mapping.md)을 참고하세요.
 
 ## 주요 기능
 
@@ -211,7 +225,7 @@ dist/demo/
 | 영역 | 현재 범위 |
 | --- | --- |
 | 대상 환경 | Ubuntu 24.04, 운영자가 선택하는 Java 17 또는 21 |
-| 애플리케이션 | 패키지당 실행형 JAR 하나. 외부 파일은 복사하지 않음 |
+| 애플리케이션 | 패키지당 실행형 JAR 하나와 검토한 설정·agent·라이브러리 파일 |
 | Compose | 정적 YAML 분석. 변수 치환, include, 다중 파일 병합, 이미지 기본 설정 해석 미지원 |
 | Dockerfile | 단순 패키지 설치 구문. 후보는 `review-required` 상태 유지 |
 | 패키지 요구 사항 | 빌드·실행 단계 정보를 보존. 실제 필요 여부와 대상 패키지 매핑은 검토 필요 |
@@ -260,7 +274,8 @@ python3 -m recompose.cli --help
 - [x] Python 런타임을 포함한 Windows x86·x64·ARM64 및 Linux amd64·ARM64 바이너리
 - [x] 대안 배포물인 단일 파일 Python 아카이브
 - [ ] 사설 레지스트리 인증과 추가 이미지 형식
-- [ ] Java 런타임·JVM 옵션·외부 의존성 탐지
+- [x] 직접 실행하는 `java -jar` 인자 분석과 참조 파일 추출
+- [ ] 전체 Java 런타임·전이 의존성 검증
 - [x] Java 이미지 정적 진단과 공식 OpenJDK 이미지 폐기 안내
 - [ ] 배포판 실시간 지원 정책 및 대체 이미지 호환성 진단
 - [ ] OS 의존성 분류와 대상 패키지 매핑

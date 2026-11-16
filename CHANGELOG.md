@@ -1,5 +1,13 @@
 # Changelog
 
+## 0.4.0 — 2026-11-16
+
+- Reconcile selected Compose execution overrides with image metadata during extraction.
+- Preserve recognized direct Java arguments and map referenced configuration, agents, additional JARs and native libraries into a managed VM directory.
+- Add explicit file inclusion, per-file review gates, integrity checks and unresolved-finding gates before bundle generation.
+- Exclude mounted-over image files and likely secret files; retain manual review for scripts, unsupported arguments and external resources.
+- Keep all five native host architectures; generated deployments continue to target Ubuntu 24.04.
+
 ## 0.3.2 — 2026-11-16
 
 - Add Windows x86/x64/ARM64 executables and ZIP distributions with embedded Python and license texts.
