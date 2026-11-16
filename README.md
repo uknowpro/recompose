@@ -1,63 +1,220 @@
 # recompose
 
-Reverse Compose: Java 컨테이너 애플리케이션을 VM의 네이티브 서비스로 이전하기 위한 도구입니다.
+**English** | [한국어](README.ko.md)
 
-## 현재 상태: 초기 개발 버전
+**From container configuration to native Java services on VMs.**
 
-- Compose의 서비스와 환경변수 이름을 분석합니다. 환경변수 값은 보고하지 않습니다.
-- Dockerfile의 apt/apk/dnf/yum 설치 명령에서 OS 패키지 **검토 후보**를 수집합니다.
-- 사용자가 검토할 Java 이전 계획을 생성합니다.
-- 검토한 실행형 JAR로 systemd 서비스와 Ubuntu 24.04용 Ansible 설치 패키지를 생성합니다.
-- 생성 파일을 만들 뿐 서버에 접속하거나 설치를 수행하지 않습니다.
+Inspect Docker Compose and Dockerfile inputs, review a migration plan, and generate a deployment bundle for running an executable Java JAR with **systemd + Ansible**. The target VM runs Java directly, without a container runtime.
 
-이미지 검사·JAR 자동 추출, Java 버전 자동 판별, Kubernetes 입력, DB 이전, 자동 롤백은 아직 지원하지 않습니다. 이미지에서 꺼낸 JAR 및 외부 설정/라이브러리의 완전성은 사용자가 확인해야 합니다. 현재 생성기는 단일 실행형 JAR만 복사합니다.
+[Quick start](#quick-start) · [Commands](#commands) · [Deployment bundle](#deployment-bundle) · [Scope](#scope-and-evidence) · [Roadmap](#roadmap)
 
-## 설치 및 실행
+> Early development · package version 0.1.0. Current analysis is static and local. Supply your own executable JAR and review the plan before generating files. Image extraction and end-to-end VM migration verification are not implemented.
 
-Python 3.10 이상이 필요합니다.
+## Features
+
+| Capability | Available today |
+| --- | --- |
+| Compose inspection | Inventory services, environment variable names and fields requiring review. Environment values are omitted from reports. |
+| OS dependency review | Collect package candidates from simple `apt`, `apt-get`, `apk`, `dnf` and `yum` installation statements, with Dockerfile stage and logical-line evidence. |
+| Explicit migration plans | Review the artifact, Java version, arguments, Ubuntu packages and required environment variables in YAML. |
+| Native service generation | Generate a systemd unit and Ansible installation playbook for a single executable JAR. |
+| Traceable artifacts | Copy the supplied JAR and record its SHA-256 checksum in a manifest. |
+| Local generation | Produce files without connecting to a cluster or modifying the destination VM. |
+
+## Migration workflow
+
+```text
+Compose + optional Dockerfile
+            |
+         inspect     -> service inventory and package candidates
+            |
+           plan      -> migration-plan.yaml
+            |
+     operator review + supplied executable JAR
+            |
+         generate    -> systemd + Ansible + artifact bundle
+            |
+     operator-run deployment and application verification
+```
+
+A successful analysis is an inventory, not a compatibility certification. Review findings before choosing the destination runtime and deployment settings.
+
+## Quick start
+
+### 1. Install from source
+
+Requires Python 3.10 or later. Run the following commands in a POSIX shell:
 
 ```sh
+git clone https://github.com/uknowpro/recompose.git
+cd recompose
 python3 -m venv .venv
 . .venv/bin/activate
 pip install -e .
-recompose inspect --compose examples/compose.yaml --dockerfile examples/Dockerfile
-recompose plan --compose examples/compose.yaml --service demo --output migration-plan.yaml
 ```
 
-계획 파일의 `artifact`에 계획 파일 기준 상대 경로 또는 절대 JAR 경로를 지정합니다. `java_version`, `jvm_options`, `app_args`, `os_packages`, `required_environment`를 검토한 후 `reviewed: true`로 설정합니다. Java 21은 초기 기본값이며 자동 판별 결과가 아닙니다.
+Docker is not required for the current static CLI. Ansible is required separately on the control machine when deploying the generated bundle.
+
+### 2. Inspect the example configuration
+
+```sh
+recompose inspect \
+  --compose examples/compose.yaml \
+  --dockerfile examples/Dockerfile
+```
+
+The checked-in examples are illustrative inputs. They do not include a runnable application or a published demo image.
+
+### 3. Create and review a plan
+
+```sh
+recompose plan \
+  --compose examples/compose.yaml \
+  --dockerfile examples/Dockerfile \
+  --service demo \
+  --output migration-plan.yaml
+```
+
+Edit the generated file. The following shows the editable fields; retain its generated `analysis` section for reference:
+
+```yaml
+schema_version: 1
+service: demo
+target: ubuntu-24.04
+reviewed: true
+artifact: /absolute/path/to/your-app.jar
+java_version: 21
+jvm_options:
+  - -Xms256m
+  - -Xmx512m
+app_args: []
+os_packages: []
+required_environment:
+  - SPRING_PROFILES_ACTIVE
+```
+
+Replace the artifact path with your own executable JAR. Relative paths resolve against the plan file's directory. The JAR must contain a `Main-Class` manifest entry; this check does not verify runtime compatibility. The memory settings above are examples, not sizing recommendations.
+
+Java 21 is the plan's default, not a detected version. Confirm the application's Java requirements, external files, native libraries, ports and service connections before setting `reviewed: true`. Select only reviewed Ubuntu package names for `os_packages`.
+
+### 4. Generate the deployment bundle
 
 ```sh
 recompose generate --plan migration-plan.yaml --output dist/demo
 ```
 
-이미 존재하는 출력 디렉터리나 계획 파일은 덮어쓰지 않습니다. 결과물에는 JAR, SHA-256 manifest, systemd unit, Ansible playbook, 환경변수 예제와 실행 안내가 포함됩니다.
+The CLI refuses to overwrite an existing output directory or an existing `--output` analysis/plan file. Choose a new destination for subsequent runs.
 
-## 배포 전 확인
+### 5. Deploy to a test VM
 
-- 원본의 command/entrypoint, 포트, 볼륨, 실행 사용자, 외부 설정, JNI, agent를 검토하세요. 자동 이식되지 않습니다.
-- OS 패키지 목록은 빌드/런타임 단계의 후보일 뿐입니다. 최종 이미지와 실제 사용 여부를 확인하고 Ubuntu 패키지 이름으로 직접 확정하세요.
-- Dockerfile 파서는 단순 설치 구문만 지원합니다. 베이스 이미지 패키지, 복잡한 셸, heredoc, 다운로드 설치는 완전히 분석하지 않습니다.
-- Compose 변수 치환, include, 다중 파일 병합, 이미지 기본 실행 설정을 해석하지 않습니다.
-- `/usr/bin/java`가 계획의 Java 버전을 가리키는지 확인하세요. 이미 여러 JDK가 설치된 VM의 alternatives를 자동 변경하지 않습니다.
-- systemd는 `/var/lib/<service>`를 작업 디렉터리로 사용합니다. 포트 매핑과 서비스 DNS는 애플리케이션 설정에서 조정하세요.
-- `environment.example.yml`을 복사하고 값을 입력한 파일을 안전하게 관리하세요. 비밀 값은 Git에 넣지 마세요. 배포에는 `recompose_environment` 매핑이 필요합니다.
-- 패키지 설치·계정·설정·서비스 변경이 발생합니다. 생성된 Ansible을 검토한 후 테스트 VM에서 실행하세요.
+Review the generated files, then prepare the deployment environment:
 
 ```sh
 cd dist/demo
+cp environment.example.yml environment.yml
+# Edit environment.yml with the application's actual values.
 ansible-playbook -i YOUR_VM, install.yml -e @environment.yml
 ```
 
-서비스 시작은 애플리케이션 정상 동작을 보장하지 않습니다. 서비스 상태, 로그, HTTP 요청과 외부 연동을 별도로 확인하세요. Ansible은 컨트롤 머신에 별도로 설치해야 합니다.
+Replace `YOUR_VM` with a reachable Ubuntu 24.04 host and configure SSH and privilege escalation for Ansible. Supply `recompose_environment: {}` when no variables are required. Keep actual environment values out of version control.
 
-## 개발
+The playbook installs packages, creates a service account and directories, copies files, and enables the service. Verify service status, logs, application endpoints and external dependencies after deployment. A started process alone does not establish application health.
+
+## Commands
+
+| Command | Required arguments | Output |
+| --- | --- | --- |
+| `inspect` | `--compose PATH` | YAML inventory; optional `--dockerfile PATH` and `--output PATH` |
+| `plan` | `--compose PATH --service NAME` | YAML migration plan; optional `--dockerfile PATH` and `--output PATH` |
+| `generate` | `--plan PATH --output DIRECTORY` | Deployment bundle and a YAML summary |
+| `--help` | — | CLI usage; also available on each subcommand |
+
+Successful commands return `0`, including inspection with review-required findings. Handled validation, argument and file errors return `2`. Exit `0` does not prove migration readiness. There is no `validate`, remote deployment or image extraction command yet.
+
+## Deployment bundle
+
+```text
+dist/demo/
+├── artifacts/
+│   └── app.jar
+├── service.service
+├── install.yml
+├── app.env.j2
+├── environment.example.yml
+├── manifest.json
+└── RUNBOOK.md
+```
+
+| Destination on the VM | Purpose |
+| --- | --- |
+| `/opt/<service>/app.jar` | Application artifact |
+| `/etc/<service>/app.env` | Root-owned environment file, mode `0600` |
+| `/var/lib/<service>` | Service-owned working directory |
+| `/etc/systemd/system/<service>.service` | Native service definition |
+
+The generated service uses `/usr/bin/java`, restarts on failure and runs as a dedicated account. The playbook installs `openjdk-17-jre-headless` or `openjdk-21-jre-headless`. On a VM with multiple Java installations, verify which runtime `/usr/bin/java` selects; alternatives are not managed automatically.
+
+## Scope and evidence
+
+| Area | Current boundary |
+| --- | --- |
+| Target | Ubuntu 24.04; Java 17 or 21 selected by the operator |
+| Application | One executable JAR per generated bundle; external files are not copied |
+| Compose | Static YAML inspection; no interpolation, include resolution, multi-file merge or image-default resolution |
+| Dockerfile | Simple package-install statements; candidates remain `review-required` |
+| Package requirements | Build-stage and runtime-stage candidates retain their stage; actual necessity and destination package mappings require review |
+| Base image | No image retrieval, inherited package inventory or Java vendor/version detection |
+| Networking and storage | Port mappings, service DNS, volume contents and external connections require explicit migration |
+| Verification | Unit tests cover CLI behavior and generated structures; no real-VM deployment certification |
+
+Dockerfile evidence uses logical line numbers after continuation joining. It is not always a physical file line number. Complex shell constructs, heredocs, downloaded installers and inherited packages are outside the current parser's coverage.
+
+Environment values are omitted from the inventory, but paths, service names and package metadata remain visible. Inspect reports before sharing them. Generated Ansible playbooks change the target system only when you explicitly execute them.
+
+## OpenJDK and base-image review
+
+**Planned capability:** assess the source Java image and recommend a destination VM runtime, with evidence and explicit unknowns.
+
+The Docker Official Image named `openjdk` is deprecated; its [official notice](https://hub.docker.com/_/openjdk) recommends replacement images. This does not mean that the OpenJDK project or every OpenJDK distribution is deprecated. Support must be checked for the selected vendor and Java release; see, for example, the [Temurin support policy](https://adoptium.net/support/).
+
+The planned review will distinguish:
+
+| Question | Intended evidence |
+| --- | --- |
+| Should the source container image be replaced? | Image publisher, tag/digest, maintenance policy and base OS lifecycle |
+| Which Java runtime should the VM use? | Application Java requirements, selected vendor support and target OS availability |
+| Does the application need compatibility work? | JVM options, native libraries, architecture, libc, certificates and fonts |
+| Is an upgrade verified? | Application tests and actual execution on the selected runtime |
+
+Migrating to a VM does not inherently require rebuilding the source image first. Replacing an image distribution and upgrading the Java major version are separate decisions. Current recompose commands do not perform this assessment or automatically select replacement images.
+
+## Development
 
 ```sh
 python3 -m unittest discover -s tests -v
+python3 -m recompose.cli --help
 ```
 
-`recompose/cli.py`에 분석, 계획, 생성 단계를 나눠 구현했습니다. 추후 이미지 입력과 Java 분석을 독립 모듈로 분리하고 공통 실행 모델을 확장할 예정입니다.
+The implementation currently lives in `recompose/cli.py`, with separate inspection, planning and generation functions. Tests cover secret-value omission, plan review requirements, artifact validation, argument escaping, package-stage evidence and bundle generation.
 
-다음 개발 순서: 이미지 digest/설정 분석 → 안전한 JAR 추출 → Java 실행 정보 판별 → 실제 VM 통합 테스트 → OS 의존성 판별 → Kubernetes 입력.
+## Roadmap
 
-기존 MIT 라이선스를 따릅니다.
+- [x] Static Compose inventory and Dockerfile package candidates
+- [x] Reviewable Java migration plan
+- [x] Executable JAR, systemd and Ansible bundle generation
+- [ ] Image digest/config inspection and safe artifact extraction
+- [ ] Java runtime, JVM option and external dependency discovery
+- [ ] OpenJDK distribution and base-image replacement assessment
+- [ ] OS dependency classification and target-package mapping
+- [ ] Test-VM deployment, health verification and rollback workflows
+- [ ] WAR/Tomcat and additional Linux distributions
+- [ ] Kubernetes inputs, including AKS/EKS dependency review
+- [ ] Additional application runtimes
+
+## Feedback and contributions
+
+Use [GitHub Issues](https://github.com/uknowpro/recompose/issues) for bugs and feature requests. Include the command, Python version, target environment and a minimal sanitized input. For code changes, include relevant tests and document unsupported cases.
+
+## License
+
+[MIT](LICENSE)
