@@ -8,7 +8,7 @@ Inspect Docker Compose and Dockerfile inputs, review a migration plan, and gener
 
 [Quick start](#quick-start) · [Commands](#commands) · [Deployment bundle](#deployment-bundle) · [Scope](#scope-and-evidence) · [Roadmap](#roadmap)
 
-> Early development · package version 0.3.0. Compose analysis is local; explicit `--image` commands access the selected public registry. Executable JAR extraction is built in. Review the generated plan before deployment; end-to-end VM migration remains unverified.
+> Early development · package version 0.3.1. Compose analysis is local; explicit `--image` commands access the selected public registry. Executable JAR extraction is built in. Review the generated plan before deployment; end-to-end VM migration remains unverified.
 
 ## Features
 
@@ -42,7 +42,19 @@ A successful analysis is an inventory, not a compatibility certification. Review
 
 ## Quick start
 
-### 1. Install from source
+### 1. Run the Linux binary — no Python installation
+
+Download the Linux x86_64 archive from [Releases](https://github.com/uknowpro/recompose/releases), verify its checksum and extract it:
+
+```sh
+tar -xzf recompose-linux-amd64.tar.gz
+./recompose --version
+./recompose inspect --image eclipse-temurin:21-jre --format json
+```
+
+Python and dependencies are embedded. No Docker, Skopeo or umoci installation is required. Tested on Debian 12 and Ubuntu 24.04; glibc 2.36+ is the build baseline. See [native binary usage and builds](docs/native-binary.md). Add the executable to PATH to use the `recompose` commands below without `./`.
+
+### Alternative: install from source
 
 Requires Python 3.10 or later. Run the following commands in a POSIX shell:
 
@@ -56,9 +68,9 @@ pip install -e .
 
 Docker, Skopeo, umoci and Syft are not required for image inspection or extraction either. Ansible is required separately on the control machine when deploying the generated bundle.
 
-### Single-file option and image input
+### Alternative Python archive and image input
 
-A maintainer-built `recompose.pyz` bundles Python dependencies; users need only Python 3.10+ to run it. See [packaging and image extraction](docs/image-extraction.md) for build instructions, supported registries and limits.
+The alternative `recompose.pyz` archive bundles dependencies but requires Python 3.10+. Use the native binary above when Python is unavailable. See [packaging and image extraction](docs/image-extraction.md) for build instructions, supported registries and limits.
 
 ```sh
 python3 recompose.pyz inspect --image eclipse-temurin:21-jre --format json
@@ -219,7 +231,8 @@ The implementation lives in `recompose/cli.py`, `recompose/java_images.py` and `
 - [x] Reviewable Java migration plan
 - [x] Executable JAR, systemd and Ansible bundle generation
 - [x] Built-in image digest/config inspection and bounded executable-JAR extraction
-- [x] Single-file Python distribution with bundled dependencies
+- [x] Native Linux x86_64 binary with embedded Python runtime
+- [x] Alternative single-file Python archive with bundled dependencies
 - [ ] Private registry authentication and broader image format coverage
 - [ ] Java runtime, JVM option and external dependency discovery
 - [x] Static Java image review and official OpenJDK image deprecation findings

@@ -1,5 +1,11 @@
 # Changelog
 
+## 0.3.1 — 2026-11-16
+
+- Add a native Linux x86_64 executable with embedded Python, dependencies, license texts and fallback CA certificates.
+- Add a containerized maintainer build and checksummed distribution archive.
+- Verify non-root extraction and live HTTPS image inspection on Ubuntu 24.04 without Python or external image tools.
+
 ## 0.3.0 — 2026-11-16
 
 - Add built-in public OCI/Docker schema-2 registry inspection and local OCI-layout input.

@@ -8,7 +8,7 @@ Docker Compose와 Dockerfile을 분석하고, 이전 계획을 검토한 뒤, �
 
 [빠른 시작](#quick-start) · [명령어](#commands) · [배포 패키지](#deployment-bundle) · [지원 범위](#scope) · [로드맵](#roadmap)
 
-> 초기 개발 단계 · 패키지 버전 0.3.0. Compose 분석은 로컬에서 수행하며, 명시적인 `--image` 명령은 선택한 공개 레지스트리에 접속합니다. 실행형 JAR 추출 기능을 내장했습니다. 배포 전 계획 검토가 필요하며 실제 VM 이전의 전체 과정 검증은 아직 완료되지 않았습니다.
+> 초기 개발 단계 · 패키지 버전 0.3.1. Compose 분석은 로컬에서 수행하며, 명시적인 `--image` 명령은 선택한 공개 레지스트리에 접속합니다. 실행형 JAR 추출 기능을 내장했습니다. 배포 전 계획 검토가 필요하며 실제 VM 이전의 전체 과정 검증은 아직 완료되지 않았습니다.
 
 ## 주요 기능
 
@@ -44,7 +44,19 @@ Compose + 선택적 Dockerfile
 
 ## 빠른 시작
 
-### 1. 소스에서 설치
+### 1. Linux 바이너리 실행 — Python 설치 불필요
+
+[Releases](https://github.com/uknowpro/recompose/releases)에서 Linux x86_64 압축 파일을 다운로드하고 체크섬을 확인한 뒤 실행합니다.
+
+```sh
+tar -xzf recompose-linux-amd64.tar.gz
+./recompose --version
+./recompose inspect --image eclipse-temurin:21-jre --format json
+```
+
+Python 런타임과 의존성이 실행 파일 안에 포함되어 있습니다. Docker·Skopeo·umoci도 설치할 필요가 없습니다. Debian 12와 Ubuntu 24.04에서 확인했으며 glibc 2.36 이상을 빌드 기준으로 합니다. [바이너리 사용·빌드 안내](docs/native-binary.md)를 참고하세요. 실행 파일을 PATH에 추가하면 아래 명령을 `./` 없이 사용할 수 있습니다.
+
+### 대안: 소스에서 설치
 
 Python 3.10 이상이 필요합니다. 아래 명령은 POSIX 셸 기준입니다.
 
@@ -58,9 +70,9 @@ pip install -e .
 
 이미지 조회·추출에도 Docker·Skopeo·umoci·Syft 설치가 필요하지 않습니다. 생성된 패키지를 배포할 때는 제어 머신에 Ansible을 별도로 설치해야 합니다.
 
-### 단일 파일 배포와 이미지 입력
+### 대안 Python 아카이브와 이미지 입력
 
-빌드한 `recompose.pyz`에는 Python 의존성이 포함됩니다. 사용자 환경에는 Python 3.10 이상만 있으면 됩니다. 빌드 방법, 지원 레지스트리와 한계는 [이미지 추출 가이드](docs/image-extraction.md)에 정리했습니다.
+대안 배포물인 `recompose.pyz`는 Python 3.10 이상이 필요합니다. Python 설치 없이 사용하려면 위의 네이티브 바이너리를 사용하세요. 빌드 방법, 지원 레지스트리와 한계는 [이미지 추출 가이드](docs/image-extraction.md)에 정리했습니다.
 
 ```sh
 python3 recompose.pyz inspect --image eclipse-temurin:21-jre --format json
@@ -229,7 +241,8 @@ python3 -m recompose.cli --help
 - [x] 검토 가능한 Java 이전 계획
 - [x] 실행형 JAR·systemd·Ansible 패키지 생성
 - [x] 이미지 digest·설정 분석과 제한된 실행형 JAR 추출 내장
-- [x] Python 의존성을 포함한 단일 파일 배포
+- [x] Python 런타임을 포함한 Linux x86_64 네이티브 바이너리
+- [x] 대안 배포물인 단일 파일 Python 아카이브
 - [ ] 사설 레지스트리 인증과 추가 이미지 형식
 - [ ] Java 런타임·JVM 옵션·외부 의존성 탐지
 - [x] Java 이미지 정적 진단과 공식 OpenJDK 이미지 폐기 안내

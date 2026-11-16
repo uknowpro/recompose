@@ -2,7 +2,11 @@
 
 Available in 0.3.0. **No Docker daemon, Skopeo, umoci or Syft installation is required.** Image access and bounded layer processing are implemented inside recompose with Python's standard library. These external projects remain research references, not runtime prerequisites.
 
-## One-file distribution
+## Native binary (recommended)
+
+Version 0.3.1 provides `./recompose`, with Python embedded and no separate runtime installation. See [native binary usage](native-binary.md).
+
+## Alternative Python archive
 
 The single-file `recompose.pyz` includes recompose, pure-Python PyYAML, dependency version metadata and license texts. Running it requires Python 3.10+ with TLS support; no pip or separate Python packages are needed on the user's machine.
 

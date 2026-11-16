@@ -212,7 +212,7 @@ WantedBy=multi-user.target
 
 def main(argv=None):
     parser = argparse.ArgumentParser(prog='recompose')
-    parser.add_argument('--version', action='version', version='recompose 0.3.0')
+    parser.add_argument('--version', action='version', version='recompose 0.3.1')
     sub = parser.add_subparsers(dest='command', required=True)
     for command in ('inspect', 'plan'):
         cmd = sub.add_parser(command)
