@@ -19,7 +19,7 @@ class MigrationTests(unittest.TestCase):
         with zipfile.ZipFile(self.jar, 'w') as jar:
             jar.writestr('META-INF/MANIFEST.MF', 'Main-Class: example.Main\n')
         self.p = plan(self.compose, 'demo')
-        self.p.update(reviewed=True, artifact='app.jar')
+        self.p.update(reviewed=True, artifact='app.jar', java_version=21)
         self.path = self.root / 'plan.yml'
 
     def generate(self):
@@ -46,6 +46,16 @@ class MigrationTests(unittest.TestCase):
         self.assertNotIn('secret-value', (root / 'environment.example.yml').read_text())
         with self.assertRaises(MigrationError):
             generate(self.path, root)
+
+    def test_unknown_java_blocks_generation(self):
+        self.p['java_version'] = None
+        with self.assertRaises(MigrationError):
+            self.generate()
+
+    def test_unsupported_java_blocks_generation(self):
+        self.p['java_version'] = 8
+        with self.assertRaises(MigrationError):
+            self.generate()
 
     def test_unsafe_service(self):
         self.p['service'] = '../escape'

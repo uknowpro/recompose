@@ -8,7 +8,7 @@ Docker Compose와 Dockerfile을 분석하고, 이전 계획을 검토한 뒤, �
 
 [빠른 시작](#quick-start) · [명령어](#commands) · [배포 패키지](#deployment-bundle) · [지원 범위](#scope) · [로드맵](#roadmap)
 
-> 초기 개발 단계 · 패키지 버전 0.1.0. 현재 분석은 로컬 파일을 대상으로 수행합니다. 실행형 JAR을 직접 준비하고 계획을 검토해야 파일을 생성할 수 있습니다. 이미지 추출과 실제 VM 이전의 전체 과정 검증은 아직 구현되지 않았습니다.
+> 초기 개발 단계 · 패키지 버전 0.2.0. 현재 분석은 로컬 파일을 대상으로 수행합니다. 실행형 JAR을 직접 준비하고 계획을 검토해야 파일을 생성할 수 있습니다. 이미지 추출과 실제 VM 이전의 전체 과정 검증은 아직 구현되지 않았습니다.
 
 ## 주요 기능
 
@@ -97,7 +97,7 @@ required_environment:
 
 `artifact`를 실제 실행형 JAR 경로로 바꾸세요. 상대 경로는 계획 파일의 디렉터리를 기준으로 해석합니다. JAR manifest에는 `Main-Class` 항목이 필요하며, 이 검사가 실행 호환성을 검증하지는 않습니다. 메모리 옵션은 예시이며 용량 산정 권고가 아닙니다.
 
-Java 21은 계획의 기본값이며 자동 판별 결과가 아닙니다. Java 요구 버전, 외부 파일, 네이티브 라이브러리, 포트, 서비스 연결을 확인한 뒤 `reviewed: true`로 설정하세요. `os_packages`에는 검토한 Ubuntu 패키지 이름만 지정합니다.
+선택한 Dockerfile 단계의 태그에서 Java 메이저 버전 단서를 찾습니다. 알 수 없으면 `java_version`은 `null`이며 직접 지정해야 합니다. 태그 단서는 실제 런타임 검증 결과가 아닙니다. Java 요구 버전, 외부 파일, 네이티브 라이브러리, 포트, 서비스 연결을 확인한 뒤 `reviewed: true`로 설정하세요. `os_packages`에는 검토한 Ubuntu 패키지 이름만 지정합니다.
 
 ### 4. 배포 패키지 생성
 
@@ -125,6 +125,8 @@ playbook은 패키지 설치, 서비스 계정·디렉터리 생성, 파일 복�
 <a id="commands"></a>
 
 ## 명령어
+
+`inspect`와 `plan`은 `--format yaml|json`, `--build-target NAME`을 지원합니다. `plan`은 선택한 서비스의 `build.target`도 반영합니다. CLI 버전은 `recompose --version`으로 확인합니다.
 
 | 명령 | 필수 인자 | 결과 |
 | --- | --- | --- |
@@ -158,7 +160,7 @@ dist/demo/
 | `/var/lib/<service>` | 서비스 계정 소유 작업 디렉터리 |
 | `/etc/systemd/system/<service>.service` | 네이티브 서비스 정의 |
 
-서비스는 전용 계정으로 `/usr/bin/java`를 실행하고 실패 시 재시작합니다. playbook은 `openjdk-17-jre-headless` 또는 `openjdk-21-jre-headless`를 설치합니다. Java가 여러 개 설치된 VM에서는 `/usr/bin/java`가 선택하는 런타임을 확인해야 합니다. alternatives 설정은 자동 변경하지 않습니다.
+서비스는 전용 계정으로 `/usr/bin/java`를 실행하고 실패 시 재시작합니다. playbook은 `openjdk-17-jre-headless` 또는 `openjdk-21-jre-headless`를 설치합니다. playbook은 `/usr/bin/java -version`의 메이저 버전이 계획과 다르면 배포를 중단합니다. alternatives 설정은 자동 변경하지 않습니다.
 
 <a id="scope"></a>
 
@@ -171,7 +173,7 @@ dist/demo/
 | Compose | 정적 YAML 분석. 변수 치환, include, 다중 파일 병합, 이미지 기본 설정 해석 미지원 |
 | Dockerfile | 단순 패키지 설치 구문. 후보는 `review-required` 상태 유지 |
 | 패키지 요구 사항 | 빌드·실행 단계 정보를 보존. 실제 필요 여부와 대상 패키지 매핑은 검토 필요 |
-| 베이스 이미지 | 이미지 조회, 상속된 패키지 목록, Java 배포판·버전 자동 판별 미지원 |
+| 베이스 이미지 | Java 이미지 계열·태그의 정적 단서 제공. 이미지 조회와 상속된 패키지 목록은 미지원 |
 | 네트워크·스토리지 | 포트 매핑, 서비스 DNS, 볼륨 데이터, 외부 연결의 별도 이전 필요 |
 | 검증 | CLI 동작과 생성 구조의 단위 테스트. 실제 VM 배포 검증 미완료 |
 
@@ -181,11 +183,11 @@ Dockerfile 근거는 줄 이어쓰기를 합친 논리적 줄 번호입니다. �
 
 ## OpenJDK와 베이스 이미지 검토
 
-**예정 기능:** 원본 Java 이미지의 교체 필요성과 대상 VM의 런타임 선택을 근거 및 미확인 항목과 함께 제안합니다.
+**0.2.0 제공 기능:** 단계별 근거와 함께 Java 베이스 이미지를 정적으로 검토합니다. 공식 `openjdk` 이미지 폐기 안내, EA·Alpine 검토 항목, 미확인 상태를 표시합니다. 자세한 내용은 [Java 이미지 진단 가이드](docs/java-image-review.md)를 참고하세요.
 
 Docker Official Image 중 `openjdk`라는 이름의 이미지는 deprecated 상태이며, [공식 안내](https://hub.docker.com/_/openjdk)는 대체 이미지 사용을 권고합니다. 이는 OpenJDK 프로젝트나 모든 OpenJDK 배포판의 지원 종료를 의미하지 않습니다. 배포판과 Java 버전별 지원 정책을 확인해야 합니다. 예를 들어 [Temurin 지원 정책](https://adoptium.net/support/)을 참고할 수 있습니다.
 
-계획 중인 진단은 다음 질문을 구분합니다.
+진단은 다음 질문을 구분합니다. 실시간 지원 정책 조회와 실행 검증은 향후 범위입니다.
 
 | 질문 | 판단에 사용할 근거 |
 | --- | --- |
@@ -194,7 +196,7 @@ Docker Official Image 중 `openjdk`라는 이름의 이미지는 deprecated 상�
 | 호환성 보완이 필요한가? | JVM 옵션, 네이티브 라이브러리, CPU 아키텍처, libc, 인증서, 폰트 |
 | 업그레이드가 검증되었는가? | 애플리케이션 테스트와 선택한 런타임에서의 실제 실행 |
 
-VM 이전을 위해 반드시 원본 이미지를 먼저 재빌드해야 하는 것은 아닙니다. 이미지 배포판 교체와 Java 메이저 버전 업그레이드는 별도로 판단합니다. 현재 recompose 명령은 이 진단이나 대체 이미지 자동 선정을 수행하지 않습니다.
+VM 이전을 위해 반드시 원본 이미지를 먼저 재빌드해야 하는 것은 아닙니다. 이미지 배포판 교체와 Java 메이저 버전 업그레이드는 별도로 판단합니다. 현재 명령은 정적 진단과 태그 단서를 제공합니다. 실시간 지원 정책 조회나 대체 이미지 자동 선정은 수행하지 않습니다.
 
 ## 개발
 
@@ -203,7 +205,7 @@ python3 -m unittest discover -s tests -v
 python3 -m recompose.cli --help
 ```
 
-현재 구현은 `recompose/cli.py`에 있으며 분석·계획·생성 함수로 나뉩니다. 테스트는 환경변수 값 제외, 계획 검토 조건, 아티팩트 검증, 인자 이스케이프, 패키지 단계 근거와 배포 패키지 생성을 다룹니다.
+현재 구현은 `recompose/cli.py`와 `recompose/java_images.py`에 있으며 분석·계획·생성 함수로 나뉩니다. 테스트는 환경변수 값 제외, 계획 검토 조건, 아티팩트 검증, 인자 이스케이프, 패키지 단계 근거와 배포 패키지 생성을 다룹니다.
 
 <a id="roadmap"></a>
 
@@ -214,12 +216,17 @@ python3 -m recompose.cli --help
 - [x] 실행형 JAR·systemd·Ansible 패키지 생성
 - [ ] 이미지 digest·설정 분석과 안전한 아티팩트 추출
 - [ ] Java 런타임·JVM 옵션·외부 의존성 탐지
-- [ ] OpenJDK 배포판 및 베이스 이미지 교체 필요성 진단
+- [x] Java 이미지 정적 진단과 공식 OpenJDK 이미지 폐기 안내
+- [ ] 배포판 실시간 지원 정책 및 대체 이미지 호환성 진단
 - [ ] OS 의존성 분류와 대상 패키지 매핑
 - [ ] 테스트 VM 배포·상태 검증·롤백 절차
 - [ ] WAR/Tomcat과 추가 Linux 배포판
 - [ ] AKS/EKS 의존성 검토를 포함한 Kubernetes 입력
 - [ ] 다른 애플리케이션 런타임
+
+## 관련 오픈소스
+
+[오픈소스 조사 문서](docs/related-projects.md)에 Syft, Skopeo, umoci, Trivy, Kantra, Docker Compose, Podlet의 역할·선언된 라이선스·연동 우선순위·한계를 정리했습니다. 조사 후보이며 현재 번들에 포함된 연동 기능은 아닙니다.
 
 ## 피드백과 기여
 

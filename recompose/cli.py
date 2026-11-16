@@ -12,6 +12,8 @@ from pathlib import Path
 
 import yaml
 
+from recompose.java_images import review_dockerfile
+
 
 class MigrationError(ValueError):
     pass
@@ -44,13 +46,19 @@ def packages(path):
     return result
 
 
-def inspect(compose, dockerfile=None):
+def inspect(compose, dockerfile=None, build_target=None):
     data = read_yaml(compose)
     services = data.get('services')
     if not isinstance(services, dict) or not services:
         raise MigrationError('Compose must contain services')
+    try:
+        image_analysis = review_dockerfile(dockerfile, build_target)
+    except ValueError as exc:
+        raise MigrationError(str(exc)) from exc
     output = []
     for name, spec in services.items():
+        if not isinstance(name, str):
+            raise MigrationError('Service name must be a string')
         if not isinstance(spec, dict):
             raise MigrationError('Service must be a mapping')
         env = spec.get('environment', {}) or {}
@@ -65,18 +73,31 @@ def inspect(compose, dockerfile=None):
                        'review_fields': sorted(k for k in spec if k != 'environment'),
                        'status': 'review-required'})
     return {'schema_version': 1, 'services': output, 'os_package_candidates': packages(dockerfile),
+            'java_image_review': image_analysis,
             'limitations': ['Static analysis only; no image inspection or extraction.',
                              'Compose interpolation, includes and overrides are not resolved.',
                              'Base-image packages and runtime necessity are not inferred.']}
 
 
-def plan(compose, service, dockerfile=None):
-    report = inspect(compose, dockerfile)
+def plan(compose, service, dockerfile=None, build_target=None):
+    data = read_yaml(compose)
+    services = data.get("services")
+    if not isinstance(services, dict):
+        raise MigrationError("Compose must contain services")
+    spec = services.get(service, {})
+    build = spec.get("build", {}) if isinstance(spec, dict) else {}
+    if build_target is None and isinstance(build, dict):
+        build_target = build.get("target")
+    if build_target is not None and not isinstance(build_target, str):
+        raise MigrationError('Build target must be a string')
+    report = inspect(compose, dockerfile, build_target)
     selected = next((s for s in report['services'] if s['name'] == service), None)
     if selected is None:
         raise MigrationError('Unknown service')
     return {'schema_version': 1, 'service': service, 'target': 'ubuntu-24.04',
-            'reviewed': False, 'artifact': None, 'java_version': 21,
+            'reviewed': False, 'artifact': None,
+            'java_version': report['java_image_review']['java_major_hint'],
+            'java_version_evidence': report['java_image_review']['confidence'],
             'jvm_options': [], 'app_args': [], 'os_packages': [],
             'required_environment': selected['environment_keys'], 'analysis': report}
 
@@ -153,6 +174,8 @@ WantedBy=multi-user.target
         {'name': 'Require deployment environment', 'ansible.builtin.assert': {'that': ["recompose_environment is defined", "recompose_environment is mapping"]}},
         {'name': 'Require application variables', 'ansible.builtin.assert': {'that': ["item in recompose_environment"]}, 'loop': p.get('required_environment', [])},
         {'name': 'Install runtime dependencies', 'ansible.builtin.apt': {'name': [f"openjdk-{p['java_version']}-jre-headless"] + p.get('os_packages', []), 'state': 'present', 'update_cache': True}},
+        {'name': 'Check selected Java runtime', 'ansible.builtin.command': {'argv': ['/usr/bin/java', '-version']}, 'register': 'recompose_java', 'changed_when': False},
+        {'name': 'Require planned Java major', 'ansible.builtin.assert': {'that': [f"recompose_java.stderr is search('version \"{p['java_version']}[.\"]')"], 'fail_msg': 'Select the planned Java major at /usr/bin/java before deployment.'}},
         {'name': 'Create service account', 'ansible.builtin.user': {'name': name, 'system': True, 'create_home': False, 'shell': '/usr/sbin/nologin'}},
     ]
     for folder, owner in [(f'/opt/{name}', 'root'), (f'/etc/{name}', 'root'), (f'/var/lib/{name}', name)]:
@@ -186,11 +209,14 @@ WantedBy=multi-user.target
 
 def main(argv=None):
     parser = argparse.ArgumentParser(prog='recompose')
+    parser.add_argument('--version', action='version', version='recompose 0.2.0')
     sub = parser.add_subparsers(dest='command', required=True)
     for command in ('inspect', 'plan'):
         cmd = sub.add_parser(command)
         cmd.add_argument('--compose', required=True)
         cmd.add_argument('--dockerfile')
+        cmd.add_argument('--build-target')
+        cmd.add_argument('--format', choices=('yaml', 'json'), default='yaml')
         if command == 'plan':
             cmd.add_argument('--service', required=True)
         cmd.add_argument('--output')
@@ -202,8 +228,8 @@ def main(argv=None):
         if a.command == 'generate':
             result = generate(a.plan, a.output)
         else:
-            result = inspect(a.compose, a.dockerfile) if a.command == 'inspect' else plan(a.compose, a.service, a.dockerfile)
-        rendered = yaml.safe_dump(result, sort_keys=False)
+            result = inspect(a.compose, a.dockerfile, a.build_target) if a.command == 'inspect' else plan(a.compose, a.service, a.dockerfile, a.build_target)
+        rendered = json.dumps(result, indent=2) + '\n' if getattr(a, 'format', 'yaml') == 'json' else yaml.safe_dump(result, sort_keys=False)
         if a.command != 'generate' and a.output:
             with Path(a.output).open('x') as f:
                 f.write(rendered)

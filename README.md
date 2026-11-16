@@ -8,7 +8,7 @@ Inspect Docker Compose and Dockerfile inputs, review a migration plan, and gener
 
 [Quick start](#quick-start) · [Commands](#commands) · [Deployment bundle](#deployment-bundle) · [Scope](#scope-and-evidence) · [Roadmap](#roadmap)
 
-> Early development · package version 0.1.0. Current analysis is static and local. Supply your own executable JAR and review the plan before generating files. Image extraction and end-to-end VM migration verification are not implemented.
+> Early development · package version 0.2.0. Current analysis is static and local. Supply your own executable JAR and review the plan before generating files. Image extraction and end-to-end VM migration verification are not implemented.
 
 ## Features
 
@@ -95,7 +95,7 @@ required_environment:
 
 Replace the artifact path with your own executable JAR. Relative paths resolve against the plan file's directory. The JAR must contain a `Main-Class` manifest entry; this check does not verify runtime compatibility. The memory settings above are examples, not sizing recommendations.
 
-Java 21 is the plan's default, not a detected version. Confirm the application's Java requirements, external files, native libraries, ports and service connections before setting `reviewed: true`. Select only reviewed Ubuntu package names for `os_packages`.
+The selected Dockerfile stage provides a Java-major tag hint. When unavailable, `java_version` is `null` and must be set explicitly; a hint is not runtime verification. Confirm the application's Java requirements, external files, native libraries, ports and service connections before setting `reviewed: true`. Select only reviewed Ubuntu package names for `os_packages`.
 
 ### 4. Generate the deployment bundle
 
@@ -121,6 +121,8 @@ Replace `YOUR_VM` with a reachable Ubuntu 24.04 host and configure SSH and privi
 The playbook installs packages, creates a service account and directories, copies files, and enables the service. Verify service status, logs, application endpoints and external dependencies after deployment. A started process alone does not establish application health.
 
 ## Commands
+
+`inspect` and `plan` accept `--format yaml|json` and `--build-target NAME`. `plan` also honors the selected service’s `build.target`. Use `recompose --version` to identify the CLI version.
 
 | Command | Required arguments | Output |
 | --- | --- | --- |
@@ -152,7 +154,7 @@ dist/demo/
 | `/var/lib/<service>` | Service-owned working directory |
 | `/etc/systemd/system/<service>.service` | Native service definition |
 
-The generated service uses `/usr/bin/java`, restarts on failure and runs as a dedicated account. The playbook installs `openjdk-17-jre-headless` or `openjdk-21-jre-headless`. On a VM with multiple Java installations, verify which runtime `/usr/bin/java` selects; alternatives are not managed automatically.
+The generated service uses `/usr/bin/java`, restarts on failure and runs as a dedicated account. The playbook installs `openjdk-17-jre-headless` or `openjdk-21-jre-headless`. The playbook checks the major reported by `/usr/bin/java -version` and stops if it differs from the plan. Alternatives are not managed automatically.
 
 ## Scope and evidence
 
@@ -163,7 +165,7 @@ The generated service uses `/usr/bin/java`, restarts on failure and runs as a de
 | Compose | Static YAML inspection; no interpolation, include resolution, multi-file merge or image-default resolution |
 | Dockerfile | Simple package-install statements; candidates remain `review-required` |
 | Package requirements | Build-stage and runtime-stage candidates retain their stage; actual necessity and destination package mappings require review |
-| Base image | No image retrieval, inherited package inventory or Java vendor/version detection |
+| Base image | Static Java image-family/tag hints only; no image retrieval or inherited package inventory |
 | Networking and storage | Port mappings, service DNS, volume contents and external connections require explicit migration |
 | Verification | Unit tests cover CLI behavior and generated structures; no real-VM deployment certification |
 
@@ -173,11 +175,11 @@ Environment values are omitted from the inventory, but paths, service names and 
 
 ## OpenJDK and base-image review
 
-**Planned capability:** assess the source Java image and recommend a destination VM runtime, with evidence and explicit unknowns.
+**Available in 0.2.0:** static Java base-image review with per-stage evidence, official `openjdk` image deprecation findings, EA/Alpine review flags and explicit unknowns. See the [Java image review guide](docs/java-image-review.md).
 
 The Docker Official Image named `openjdk` is deprecated; its [official notice](https://hub.docker.com/_/openjdk) recommends replacement images. This does not mean that the OpenJDK project or every OpenJDK distribution is deprecated. Support must be checked for the selected vendor and Java release; see, for example, the [Temurin support policy](https://adoptium.net/support/).
 
-The planned review will distinguish:
+The review separates the following questions; live support checks and execution verification remain future work:
 
 | Question | Intended evidence |
 | --- | --- |
@@ -186,7 +188,7 @@ The planned review will distinguish:
 | Does the application need compatibility work? | JVM options, native libraries, architecture, libc, certificates and fonts |
 | Is an upgrade verified? | Application tests and actual execution on the selected runtime |
 
-Migrating to a VM does not inherently require rebuilding the source image first. Replacing an image distribution and upgrading the Java major version are separate decisions. Current recompose commands do not perform this assessment or automatically select replacement images.
+Migrating to a VM does not inherently require rebuilding the source image first. Replacing an image distribution and upgrading the Java major version are separate decisions. Current commands report static findings and tag hints. They do not perform live lifecycle checks or automatically select replacement images.
 
 ## Development
 
@@ -195,7 +197,7 @@ python3 -m unittest discover -s tests -v
 python3 -m recompose.cli --help
 ```
 
-The implementation currently lives in `recompose/cli.py`, with separate inspection, planning and generation functions. Tests cover secret-value omission, plan review requirements, artifact validation, argument escaping, package-stage evidence and bundle generation.
+The implementation lives in `recompose/cli.py` and `recompose/java_images.py`, with separate inspection, planning and generation functions. Tests cover secret-value omission, plan review requirements, artifact validation, argument escaping, package-stage evidence and bundle generation.
 
 ## Roadmap
 
@@ -204,12 +206,17 @@ The implementation currently lives in `recompose/cli.py`, with separate inspecti
 - [x] Executable JAR, systemd and Ansible bundle generation
 - [ ] Image digest/config inspection and safe artifact extraction
 - [ ] Java runtime, JVM option and external dependency discovery
-- [ ] OpenJDK distribution and base-image replacement assessment
+- [x] Static Java image review and official OpenJDK image deprecation findings
+- [ ] Live distribution lifecycle and replacement-image compatibility assessment
 - [ ] OS dependency classification and target-package mapping
 - [ ] Test-VM deployment, health verification and rollback workflows
 - [ ] WAR/Tomcat and additional Linux distributions
 - [ ] Kubernetes inputs, including AKS/EKS dependency review
 - [ ] Additional application runtimes
+
+## Related projects
+
+See the [open-source survey](docs/related-projects.md) for Syft, Skopeo, umoci, Trivy, Kantra, Docker Compose and Podlet: capabilities, declared licenses, integration priorities and boundaries. These tools are research candidates, not bundled integrations.
 
 ## Feedback and contributions
 
