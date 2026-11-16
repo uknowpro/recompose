@@ -1,6 +1,6 @@
 # Java image review
 
-Available in 0.2.0. Rules last reviewed on 2026-11-16.
+Available since 0.2.0. Rules last reviewed on 2026-11-16. This guide covers static Dockerfile mode; see [built-in image extraction](image-extraction.md) for the registry/OCI-layout mode added in 0.3.0.
 
 ```sh
 recompose inspect --compose examples/compose.yaml --dockerfile examples/Dockerfile --format json

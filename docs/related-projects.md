@@ -1,6 +1,6 @@
 # Related open-source projects
 
-Reviewed: 2026-11-16. This is a source-based design survey, not an integration benchmark. None of these projects is bundled with or invoked by recompose 0.2.0. Licenses below are those declared by the linked upstream repositories; dependencies and redistribution notices need review at a pinned integration version.
+Reviewed: 2026-11-16. This is a source-based design survey, not an integration benchmark. None of these projects is bundled with or invoked by recompose. Version 0.3.0 implements a bounded OCI/registry reader internally so users do not install image tools. The adapter proposals below remain future alternatives, not installation requirements. Licenses below are those declared by the linked upstream repositories; dependencies and redistribution notices need review at a pinned integration version.
 
 ## Recommended integration order
 

@@ -7,12 +7,15 @@ import shlex
 import shutil
 import sys
 import tempfile
+import tarfile
+import urllib.error
 import zipfile
 from pathlib import Path
 
 import yaml
 
 from recompose.java_images import review_dockerfile
+from recompose.images import ImageError, image_operation
 
 
 class MigrationError(ValueError):
@@ -209,36 +212,58 @@ WantedBy=multi-user.target
 
 def main(argv=None):
     parser = argparse.ArgumentParser(prog='recompose')
-    parser.add_argument('--version', action='version', version='recompose 0.2.0')
+    parser.add_argument('--version', action='version', version='recompose 0.3.0')
     sub = parser.add_subparsers(dest='command', required=True)
     for command in ('inspect', 'plan'):
         cmd = sub.add_parser(command)
-        cmd.add_argument('--compose', required=True)
+        if command == 'inspect':
+            inputs = cmd.add_mutually_exclusive_group(required=True)
+            inputs.add_argument('--compose')
+            inputs.add_argument('--image')
+            inputs.add_argument('--oci-layout')
+            cmd.add_argument('--platform', default='linux/amd64')
+        else:
+            cmd.add_argument('--compose', required=True)
         cmd.add_argument('--dockerfile')
         cmd.add_argument('--build-target')
         cmd.add_argument('--format', choices=('yaml', 'json'), default='yaml')
         if command == 'plan':
             cmd.add_argument('--service', required=True)
         cmd.add_argument('--output')
+    cmd = sub.add_parser('extract')
+    inputs = cmd.add_mutually_exclusive_group(required=True)
+    inputs.add_argument('--image')
+    inputs.add_argument('--oci-layout')
+    cmd.add_argument('--platform', default='linux/amd64')
+    cmd.add_argument('--jar')
+    cmd.add_argument('--service', default='app')
+    cmd.add_argument('--output', required=True)
+    cmd.add_argument('--format', choices=('yaml', 'json'), default='yaml')
     cmd = sub.add_parser('generate')
     cmd.add_argument('--plan', required=True)
     cmd.add_argument('--output', required=True)
     a = parser.parse_args(argv)
     try:
-        if a.command == 'generate':
+        if a.command == 'extract':
+            result = image_operation(a.image, a.oci_layout, a.platform, a.output, a.jar, a.service)
+        elif a.command == 'inspect' and not a.compose:
+            if a.dockerfile or a.build_target:
+                raise MigrationError('--dockerfile and --build-target require --compose')
+            result = image_operation(a.image, a.oci_layout, a.platform)
+        elif a.command == 'generate':
             result = generate(a.plan, a.output)
         else:
             result = inspect(a.compose, a.dockerfile, a.build_target) if a.command == 'inspect' else plan(a.compose, a.service, a.dockerfile, a.build_target)
         rendered = json.dumps(result, indent=2) + '\n' if getattr(a, 'format', 'yaml') == 'json' else yaml.safe_dump(result, sort_keys=False)
-        if a.command != 'generate' and a.output:
+        if a.command not in ('generate', 'extract') and a.output:
             with Path(a.output).open('x') as f:
                 f.write(rendered)
         else:
             print(rendered, end='')
         return 0
-    except (MigrationError, OSError, yaml.YAMLError, zipfile.BadZipFile) as exc:
+    except (MigrationError, ImageError, OSError, yaml.YAMLError, zipfile.BadZipFile, tarfile.TarError, EOFError, urllib.error.URLError) as exc:
         # Parser exceptions can contain source lines with secrets.
-        message = str(exc) if isinstance(exc, MigrationError) else type(exc).__name__
+        message = str(exc) if isinstance(exc, (MigrationError, ImageError)) else type(exc).__name__
         print(f'recompose: {message}', file=sys.stderr)
         return 2
 

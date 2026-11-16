@@ -8,18 +8,19 @@ Inspect Docker Compose and Dockerfile inputs, review a migration plan, and gener
 
 [Quick start](#quick-start) · [Commands](#commands) · [Deployment bundle](#deployment-bundle) · [Scope](#scope-and-evidence) · [Roadmap](#roadmap)
 
-> Early development · package version 0.2.0. Current analysis is static and local. Supply your own executable JAR and review the plan before generating files. Image extraction and end-to-end VM migration verification are not implemented.
+> Early development · package version 0.3.0. Compose analysis is local; explicit `--image` commands access the selected public registry. Executable JAR extraction is built in. Review the generated plan before deployment; end-to-end VM migration remains unverified.
 
 ## Features
 
 | Capability | Available today |
 | --- | --- |
+| Built-in image access | Inspect public registry images or local OCI layouts and extract executable JARs without Docker, Skopeo or umoci. |
 | Compose inspection | Inventory services, environment variable names and fields requiring review. Environment values are omitted from reports. |
 | OS dependency review | Collect package candidates from simple `apt`, `apt-get`, `apk`, `dnf` and `yum` installation statements, with Dockerfile stage and logical-line evidence. |
 | Explicit migration plans | Review the artifact, Java version, arguments, Ubuntu packages and required environment variables in YAML. |
 | Native service generation | Generate a systemd unit and Ansible installation playbook for a single executable JAR. |
 | Traceable artifacts | Copy the supplied JAR and record its SHA-256 checksum in a manifest. |
-| Local generation | Produce files without connecting to a cluster or modifying the destination VM. |
+| Local generation | Generate deployment files without connecting to a cluster or modifying the destination VM. |
 
 ## Migration workflow
 
@@ -53,7 +54,19 @@ python3 -m venv .venv
 pip install -e .
 ```
 
-Docker is not required for the current static CLI. Ansible is required separately on the control machine when deploying the generated bundle.
+Docker, Skopeo, umoci and Syft are not required for image inspection or extraction either. Ansible is required separately on the control machine when deploying the generated bundle.
+
+### Single-file option and image input
+
+A maintainer-built `recompose.pyz` bundles Python dependencies; users need only Python 3.10+ to run it. See [packaging and image extraction](docs/image-extraction.md) for build instructions, supported registries and limits.
+
+```sh
+python3 recompose.pyz inspect --image eclipse-temurin:21-jre --format json
+# With source installation, use the equivalent command:
+recompose inspect --image eclipse-temurin:21-jre --format json
+```
+
+For your application image, `recompose extract --image IMAGE --output extracted/app` creates a JAR, provenance report and unreviewed migration plan. Public anonymous pulls and local OCI layouts are supported; private registry login is not yet supported.
 
 ### 2. Inspect the example configuration
 
@@ -126,12 +139,13 @@ The playbook installs packages, creates a service account and directories, copie
 
 | Command | Required arguments | Output |
 | --- | --- | --- |
-| `inspect` | `--compose PATH` | YAML inventory; optional `--dockerfile PATH` and `--output PATH` |
+| `inspect` | One of `--compose PATH`, `--image REF`, `--oci-layout DIR` | YAML inventory; optional `--dockerfile PATH` and `--output PATH` |
 | `plan` | `--compose PATH --service NAME` | YAML migration plan; optional `--dockerfile PATH` and `--output PATH` |
+| `extract` | `--image REF` or `--oci-layout DIR`, plus `--output DIR` | JAR, image report and migration plan; optional `--jar PATH`, `--platform`, `--service` |
 | `generate` | `--plan PATH --output DIRECTORY` | Deployment bundle and a YAML summary |
 | `--help` | — | CLI usage; also available on each subcommand |
 
-Successful commands return `0`, including inspection with review-required findings. Handled validation, argument and file errors return `2`. Exit `0` does not prove migration readiness. There is no `validate`, remote deployment or image extraction command yet.
+Successful commands return `0`, including inspection with review-required findings. Handled validation, argument and file errors return `2`. Exit `0` does not prove migration readiness. There is no `validate` or remote deployment command yet.
 
 ## Deployment bundle
 
@@ -165,7 +179,7 @@ The generated service uses `/usr/bin/java`, restarts on failure and runs as a de
 | Compose | Static YAML inspection; no interpolation, include resolution, multi-file merge or image-default resolution |
 | Dockerfile | Simple package-install statements; candidates remain `review-required` |
 | Package requirements | Build-stage and runtime-stage candidates retain their stage; actual necessity and destination package mappings require review |
-| Base image | Static Java image-family/tag hints only; no image retrieval or inherited package inventory |
+| Image access | Built-in public registry/OCI-layout inspection and bounded JAR extraction; inherited package inventory is not implemented |
 | Networking and storage | Port mappings, service DNS, volume contents and external connections require explicit migration |
 | Verification | Unit tests cover CLI behavior and generated structures; no real-VM deployment certification |
 
@@ -197,14 +211,16 @@ python3 -m unittest discover -s tests -v
 python3 -m recompose.cli --help
 ```
 
-The implementation lives in `recompose/cli.py` and `recompose/java_images.py`, with separate inspection, planning and generation functions. Tests cover secret-value omission, plan review requirements, artifact validation, argument escaping, package-stage evidence and bundle generation.
+The implementation lives in `recompose/cli.py`, `recompose/java_images.py` and `recompose/images.py`, with separate inspection, planning and generation functions. Tests cover secret-value omission, plan review requirements, artifact validation, argument escaping, package-stage evidence and bundle generation.
 
 ## Roadmap
 
 - [x] Static Compose inventory and Dockerfile package candidates
 - [x] Reviewable Java migration plan
 - [x] Executable JAR, systemd and Ansible bundle generation
-- [ ] Image digest/config inspection and safe artifact extraction
+- [x] Built-in image digest/config inspection and bounded executable-JAR extraction
+- [x] Single-file Python distribution with bundled dependencies
+- [ ] Private registry authentication and broader image format coverage
 - [ ] Java runtime, JVM option and external dependency discovery
 - [x] Static Java image review and official OpenJDK image deprecation findings
 - [ ] Live distribution lifecycle and replacement-image compatibility assessment
@@ -216,7 +232,7 @@ The implementation lives in `recompose/cli.py` and `recompose/java_images.py`, w
 
 ## Related projects
 
-See the [open-source survey](docs/related-projects.md) for Syft, Skopeo, umoci, Trivy, Kantra, Docker Compose and Podlet: capabilities, declared licenses, integration priorities and boundaries. These tools are research candidates, not bundled integrations.
+See the [open-source survey](docs/related-projects.md) for Syft, Skopeo, umoci, Trivy, Kantra, Docker Compose and Podlet: capabilities, declared licenses, integration priorities and boundaries. These tools are research candidates, not installation prerequisites. Version 0.3.0 implements the supported image-access subset internally.
 
 ## Feedback and contributions
 

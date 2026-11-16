@@ -8,12 +8,13 @@ Docker Compose와 Dockerfile을 분석하고, 이전 계획을 검토한 뒤, �
 
 [빠른 시작](#quick-start) · [명령어](#commands) · [배포 패키지](#deployment-bundle) · [지원 범위](#scope) · [로드맵](#roadmap)
 
-> 초기 개발 단계 · 패키지 버전 0.2.0. 현재 분석은 로컬 파일을 대상으로 수행합니다. 실행형 JAR을 직접 준비하고 계획을 검토해야 파일을 생성할 수 있습니다. 이미지 추출과 실제 VM 이전의 전체 과정 검증은 아직 구현되지 않았습니다.
+> 초기 개발 단계 · 패키지 버전 0.3.0. Compose 분석은 로컬에서 수행하며, 명시적인 `--image` 명령은 선택한 공개 레지스트리에 접속합니다. 실행형 JAR 추출 기능을 내장했습니다. 배포 전 계획 검토가 필요하며 실제 VM 이전의 전체 과정 검증은 아직 완료되지 않았습니다.
 
 ## 주요 기능
 
 | 기능 | 현재 제공 범위 |
 | --- | --- |
+| 내장 이미지 처리 | Docker·Skopeo·umoci 없이 공개 이미지나 로컬 OCI 레이아웃을 조회하고 실행형 JAR을 추출합니다. |
 | Compose 분석 | 서비스, 환경변수 이름, 검토 대상 필드를 수집합니다. 환경변수 값은 보고서에서 제외합니다. |
 | OS 의존성 검토 | 단순한 `apt`, `apt-get`, `apk`, `dnf`, `yum` 설치 구문에서 패키지 후보와 Dockerfile 단계·논리적 줄 번호를 수집합니다. |
 | 명시적 이전 계획 | 아티팩트, Java 버전, 실행 인자, Ubuntu 패키지와 필수 환경변수를 YAML로 검토합니다. |
@@ -55,7 +56,19 @@ python3 -m venv .venv
 pip install -e .
 ```
 
-현재 정적 분석 CLI에는 Docker가 필요하지 않습니다. 생성된 패키지를 배포할 때는 제어 머신에 Ansible을 별도로 설치해야 합니다.
+이미지 조회·추출에도 Docker·Skopeo·umoci·Syft 설치가 필요하지 않습니다. 생성된 패키지를 배포할 때는 제어 머신에 Ansible을 별도로 설치해야 합니다.
+
+### 단일 파일 배포와 이미지 입력
+
+빌드한 `recompose.pyz`에는 Python 의존성이 포함됩니다. 사용자 환경에는 Python 3.10 이상만 있으면 됩니다. 빌드 방법, 지원 레지스트리와 한계는 [이미지 추출 가이드](docs/image-extraction.md)에 정리했습니다.
+
+```sh
+python3 recompose.pyz inspect --image eclipse-temurin:21-jre --format json
+# 소스 설치 방식에서는 다음과 같이 실행합니다.
+recompose inspect --image eclipse-temurin:21-jre --format json
+```
+
+애플리케이션 이미지에 `recompose extract --image IMAGE --output extracted/app`을 실행하면 JAR, 출처 보고서와 미검토 이전 계획을 생성합니다. 공개 이미지의 익명 조회와 로컬 OCI 레이아웃을 지원하며, 사설 레지스트리 로그인은 아직 지원하지 않습니다.
 
 ### 2. 예제 구성 분석
 
@@ -130,12 +143,13 @@ playbook은 패키지 설치, 서비스 계정·디렉터리 생성, 파일 복�
 
 | 명령 | 필수 인자 | 결과 |
 | --- | --- | --- |
-| `inspect` | `--compose PATH` | YAML 분석 결과. 선택적으로 `--dockerfile PATH`, `--output PATH` 지정 |
+| `inspect` | `--compose PATH`, `--image REF`, `--oci-layout DIR` 중 하나 | YAML 분석 결과. 선택적으로 `--dockerfile PATH`, `--output PATH` 지정 |
 | `plan` | `--compose PATH --service NAME` | YAML 이전 계획. 선택적으로 `--dockerfile PATH`, `--output PATH` 지정 |
+| `extract` | `--image REF` 또는 `--oci-layout DIR`, `--output DIR` | JAR·이미지 보고서·이전 계획. `--jar PATH`, `--platform`, `--service` 선택 가능 |
 | `generate` | `--plan PATH --output DIRECTORY` | 배포 패키지와 YAML 요약 |
 | `--help` | — | 사용법. 하위 명령에서도 제공 |
 
-검토 필요 항목이 있는 분석을 포함해 정상 실행은 `0`을 반환합니다. 처리된 검증·인자·파일 오류는 `2`를 반환합니다. 종료 코드 `0`은 이전 준비 완료를 보장하지 않습니다. `validate`, 원격 배포, 이미지 추출 명령은 아직 없습니다.
+검토 필요 항목이 있는 분석을 포함해 정상 실행은 `0`을 반환합니다. 처리된 검증·인자·파일 오류는 `2`를 반환합니다. 종료 코드 `0`은 이전 준비 완료를 보장하지 않습니다. `validate`와 원격 배포 명령은 아직 없습니다.
 
 <a id="deployment-bundle"></a>
 
@@ -173,7 +187,7 @@ dist/demo/
 | Compose | 정적 YAML 분석. 변수 치환, include, 다중 파일 병합, 이미지 기본 설정 해석 미지원 |
 | Dockerfile | 단순 패키지 설치 구문. 후보는 `review-required` 상태 유지 |
 | 패키지 요구 사항 | 빌드·실행 단계 정보를 보존. 실제 필요 여부와 대상 패키지 매핑은 검토 필요 |
-| 베이스 이미지 | Java 이미지 계열·태그의 정적 단서 제공. 이미지 조회와 상속된 패키지 목록은 미지원 |
+| 이미지 처리 | 공개 레지스트리·OCI 레이아웃 조회와 제한된 JAR 추출 내장. 상속된 패키지 목록 수집은 미지원 |
 | 네트워크·스토리지 | 포트 매핑, 서비스 DNS, 볼륨 데이터, 외부 연결의 별도 이전 필요 |
 | 검증 | CLI 동작과 생성 구조의 단위 테스트. 실제 VM 배포 검증 미완료 |
 
@@ -205,7 +219,7 @@ python3 -m unittest discover -s tests -v
 python3 -m recompose.cli --help
 ```
 
-현재 구현은 `recompose/cli.py`와 `recompose/java_images.py`에 있으며 분석·계획·생성 함수로 나뉩니다. 테스트는 환경변수 값 제외, 계획 검토 조건, 아티팩트 검증, 인자 이스케이프, 패키지 단계 근거와 배포 패키지 생성을 다룹니다.
+현재 구현은 `recompose/cli.py`, `recompose/java_images.py`, `recompose/images.py`에 있으며 분석·계획·생성 함수로 나뉩니다. 테스트는 환경변수 값 제외, 계획 검토 조건, 아티팩트 검증, 인자 이스케이프, 패키지 단계 근거와 배포 패키지 생성을 다룹니다.
 
 <a id="roadmap"></a>
 
@@ -214,7 +228,9 @@ python3 -m recompose.cli --help
 - [x] Compose 정적 분석과 Dockerfile 패키지 후보 수집
 - [x] 검토 가능한 Java 이전 계획
 - [x] 실행형 JAR·systemd·Ansible 패키지 생성
-- [ ] 이미지 digest·설정 분석과 안전한 아티팩트 추출
+- [x] 이미지 digest·설정 분석과 제한된 실행형 JAR 추출 내장
+- [x] Python 의존성을 포함한 단일 파일 배포
+- [ ] 사설 레지스트리 인증과 추가 이미지 형식
 - [ ] Java 런타임·JVM 옵션·외부 의존성 탐지
 - [x] Java 이미지 정적 진단과 공식 OpenJDK 이미지 폐기 안내
 - [ ] 배포판 실시간 지원 정책 및 대체 이미지 호환성 진단
@@ -226,7 +242,7 @@ python3 -m recompose.cli --help
 
 ## 관련 오픈소스
 
-[오픈소스 조사 문서](docs/related-projects.md)에 Syft, Skopeo, umoci, Trivy, Kantra, Docker Compose, Podlet의 역할·선언된 라이선스·연동 우선순위·한계를 정리했습니다. 조사 후보이며 현재 번들에 포함된 연동 기능은 아닙니다.
+[오픈소스 조사 문서](docs/related-projects.md)에 Syft, Skopeo, umoci, Trivy, Kantra, Docker Compose, Podlet의 역할·선언된 라이선스·연동 우선순위·한계를 정리했습니다. 조사 후보이며 사용자 설치 요건은 아닙니다. 0.3.0은 지원 범위의 이미지 처리를 내부에 직접 구현했습니다.
 
 ## 피드백과 기여
 
