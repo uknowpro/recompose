@@ -138,6 +138,12 @@ class ImageTests(unittest.TestCase):
         with self.assertRaises(ImageError):
             self.extract()
 
+    def test_nested_symlink_parent_not_followed(self):
+        self.fixture([[('app/nested', ('/tmp',)), ('app/nested/app.jar', jar_bytes())]],
+                     command=['java', '-jar', '/app/nested/app.jar'])
+        with self.assertRaises(ImageError):
+            self.extract()
+
     def test_ambiguous_jar_requires_selection(self):
         self.fixture([[('a.jar', jar_bytes()), ('b.jar', jar_bytes())]], command=['/entrypoint.sh'])
         with self.assertRaises(ImageError):

@@ -1,0 +1,58 @@
+name: Native builds
+on:
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  windows:
+    runs-on: windows-2022
+    timeout-minutes: 20
+    env:
+      PYTHONUTF8: '1'
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+          architecture: x64
+      - name: Install build dependencies
+        run: python -m pip install PyYAML==6.0.3 pyinstaller==6.22.3
+      - name: Unit tests
+        run: python -m unittest discover -s tests -v
+      - name: Build Windows executable
+        run: python tools/build_windows.py
+      - name: Native offline smoke test
+        run: python tools/smoke_native.py --binary dist/windows/recompose.exe
+      - name: Public HTTPS image inspection
+        run: |
+          .\dist\windows\recompose.exe inspect --image eclipse-temurin:21-jre --format json
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+      - uses: actions/upload-artifact@v4
+        with:
+          name: recompose-windows-amd64
+          path: |
+            dist/windows/recompose.exe
+            dist/windows/recompose-windows-amd64.zip
+            dist/windows/SHA256SUMS-windows.txt
+          if-no-files-found: error
+  linux:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - run: python -m pip install PyYAML==6.0.3
+      - name: Build Linux executable and test
+        run: sh tools/build_native.sh
+      - name: Native offline smoke test
+        run: python tools/smoke_native.py --binary dist/native/recompose
+      - uses: actions/upload-artifact@v4
+        with:
+          name: recompose-linux-amd64
+          path: |
+            dist/native/recompose
+            dist/native/recompose-linux-amd64.tar.gz
+            dist/native/SHA256SUMS
+          if-no-files-found: error

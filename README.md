@@ -8,7 +8,7 @@ Inspect Docker Compose and Dockerfile inputs, review a migration plan, and gener
 
 [Quick start](#quick-start) · [Commands](#commands) · [Deployment bundle](#deployment-bundle) · [Scope](#scope-and-evidence) · [Roadmap](#roadmap)
 
-> Early development · package version 0.3.1. Compose analysis is local; explicit `--image` commands access the selected public registry. Executable JAR extraction is built in. Review the generated plan before deployment; end-to-end VM migration remains unverified.
+> Early development · package version 0.3.2. Compose analysis is local; explicit `--image` commands access the selected public registry. Executable JAR extraction is built in. Review the generated plan before deployment; end-to-end VM migration remains unverified.
 
 ## Features
 
@@ -42,9 +42,9 @@ A successful analysis is an inventory, not a compatibility certification. Review
 
 ## Quick start
 
-### 1. Run the Linux binary — no Python installation
+### 1. Run the Windows or Linux binary — no Python installation
 
-Download the Linux x86_64 archive from [Releases](https://github.com/uknowpro/recompose/releases), verify its checksum and extract it:
+Download the archive for your platform from [Releases](https://github.com/uknowpro/recompose/releases), verify its checksum and extract it:
 
 ```sh
 tar -xzf recompose-linux-amd64.tar.gz
@@ -52,7 +52,20 @@ tar -xzf recompose-linux-amd64.tar.gz
 ./recompose inspect --image eclipse-temurin:21-jre --format json
 ```
 
-Python and dependencies are embedded. No Docker, Skopeo or umoci installation is required. Tested on Debian 12 and Ubuntu 24.04; glibc 2.36+ is the build baseline. See [native binary usage and builds](docs/native-binary.md). Add the executable to PATH to use the `recompose` commands below without `./`.
+Windows x64 (PowerShell):
+
+```powershell
+Expand-Archive .\recompose-windows-amd64.zip -DestinationPath .\recompose
+.\recompose\recompose.exe --version
+.\recompose\recompose.exe inspect --image eclipse-temurin:21-jre --format json
+```
+
+| Platform | Download |
+| --- | --- |
+| Windows x64 | `recompose-windows-amd64.zip` or `recompose.exe` |
+| Linux x86_64 | `recompose-linux-amd64.tar.gz` or `recompose` |
+
+Python and dependencies are embedded. No Docker, Skopeo or umoci installation is required. Windows binaries are built and smoke-tested on Windows Server 2022 runners. Linux was tested on Debian 12 and Ubuntu 24.04; glibc 2.36+ is the build baseline. Windows binaries are unsigned. Both platforms generate deployment files for Linux VMs. See [native binary usage and builds](docs/native-binary.md). Add the executable to PATH to use the `recompose` commands below without `./`.
 
 ### Alternative: install from source
 
@@ -231,7 +244,7 @@ The implementation lives in `recompose/cli.py`, `recompose/java_images.py` and `
 - [x] Reviewable Java migration plan
 - [x] Executable JAR, systemd and Ansible bundle generation
 - [x] Built-in image digest/config inspection and bounded executable-JAR extraction
-- [x] Native Linux x86_64 binary with embedded Python runtime
+- [x] Native Windows x64 and Linux x86_64 binaries with embedded Python runtime
 - [x] Alternative single-file Python archive with bundled dependencies
 - [ ] Private registry authentication and broader image format coverage
 - [ ] Java runtime, JVM option and external dependency discovery

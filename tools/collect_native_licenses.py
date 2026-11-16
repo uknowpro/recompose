@@ -7,7 +7,8 @@ from pathlib import Path
 output = Path(sys.argv[1])
 output.mkdir(parents=True, exist_ok=True)
 shutil.copyfile('LICENSE', output / 'recompose-MIT.txt')
-python_license = Path(sys.base_prefix) / 'lib' / ('python' + '.'.join(map(str, sys.version_info[:2]))) / 'LICENSE.txt'
+python_license = (Path(sys.base_prefix) / 'LICENSE.txt' if sys.platform == 'win32' else
+                  Path(sys.base_prefix) / 'lib' / ('python' + '.'.join(map(str, sys.version_info[:2]))) / 'LICENSE.txt')
 shutil.copyfile(python_license, output / 'Python-LICENSE.txt')
 for name in ('PyYAML', 'pyinstaller'):
     distribution = importlib.metadata.distribution(name)

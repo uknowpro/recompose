@@ -67,7 +67,7 @@ def review_dockerfile(path, target=None):
     stages = []
     aliases = {}
     if path:
-        physical = Path(path).read_text().splitlines()
+        physical = Path(path).read_text(encoding='utf-8').splitlines()
         # Refuse unsupported syntax rather than mistaking heredoc content for FROM.
         if any(re.match(r'\s*#\s*escape\s*=', line, re.I) for line in physical) or any('<<' in line and not line.lstrip().startswith('#') for line in physical):
             raise ValueError('Dockerfile escape directives and heredocs are not supported for base-image review')

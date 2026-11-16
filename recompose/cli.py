@@ -23,7 +23,7 @@ class MigrationError(ValueError):
 
 
 def read_yaml(path):
-    value = yaml.safe_load(Path(path).read_text())
+    value = yaml.safe_load(Path(path).read_text(encoding='utf-8'))
     if not isinstance(value, dict):
         raise MigrationError('Expected a YAML mapping')
     return value
@@ -33,7 +33,7 @@ def packages(path):
     """Candidates only: never infer runtime necessity from installation alone."""
     if not path:
         return []
-    lines = Path(path).read_text().replace('\\\n', ' ').splitlines()
+    lines = Path(path).read_text(encoding='utf-8').replace('\\\n', ' ').splitlines()
     stage = 'unknown'
     result = []
     for number, line in enumerate(lines, 1):
@@ -212,7 +212,7 @@ WantedBy=multi-user.target
 
 def main(argv=None):
     parser = argparse.ArgumentParser(prog='recompose')
-    parser.add_argument('--version', action='version', version='recompose 0.3.1')
+    parser.add_argument('--version', action='version', version='recompose 0.3.2')
     sub = parser.add_subparsers(dest='command', required=True)
     for command in ('inspect', 'plan'):
         cmd = sub.add_parser(command)

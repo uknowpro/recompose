@@ -14,7 +14,7 @@ import urllib.parse
 import urllib.request
 import zipfile
 import zlib
-from pathlib import Path
+from pathlib import Path, PurePosixPath
 
 import yaml
 
@@ -318,7 +318,7 @@ def scan_layers(source, manifest, workspace):
         for old in list(files):
             if any(old == r or old.startswith(r + '/') for r in removals) or any(not d or old.startswith(d + '/') for d in opaque):
                 del files[old]
-        directory_paths = {str(parent) for name in (*files, *additions) for parent in Path(name).parents if str(parent) != '.'}
+        directory_paths = {str(parent) for name in (*files, *additions) for parent in PurePosixPath(name).parents if str(parent) != '.'}
         for path, entry in additions.items():
             if entry['kind'] != 'directory' and path in directory_paths:
                 for old in list(files):
@@ -330,7 +330,7 @@ def scan_layers(source, manifest, workspace):
     result = {}
     for path, entry in files.items():
         if entry['payload']:
-            parents = list(Path(path).parents)[:-1]
+            parents = list(PurePosixPath(path).parents)[:-1]
             if any(files.get(str(p), {}).get('kind', 'directory') != 'directory' for p in parents):
                 continue
             result[path] = entry['payload']

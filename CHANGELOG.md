@@ -1,5 +1,12 @@
 # Changelog
 
+## 0.3.2 — 2026-11-16
+
+- Add a Windows x64 executable and ZIP distribution with embedded Python and license texts.
+- Add Windows/Linux native-build automation and frozen-executable smoke checks.
+- Keep container paths POSIX on Windows, read input text as UTF-8, and use Windows system trust for HTTPS.
+- Windows execution remains a CLI host capability; generated deployment files still target Linux VMs.
+
 ## 0.3.1 — 2026-11-16
 
 - Add a native Linux x86_64 executable with embedded Python, dependencies, license texts and fallback CA certificates.

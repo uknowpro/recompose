@@ -31,6 +31,10 @@ class MigrationTests(unittest.TestCase):
         self.assertNotIn('secret-value', json.dumps(report))
         self.assertEqual(report['services'][0]['environment_keys'], ['PASSWORD'])
 
+    def test_utf8_input(self):
+        self.compose.write_text('services:\n  demo:\n    environment:\n      MESSAGE: 한국어\n', encoding='utf-8')
+        self.assertEqual(inspect(self.compose)['services'][0]['environment_keys'], ['MESSAGE'])
+
     def test_review_required(self):
         self.p['reviewed'] = False
         with self.assertRaises(MigrationError):
